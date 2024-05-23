@@ -37,6 +37,10 @@ private slots:
 
     void on_setPosBtn_clicked();
 
+    void on_reset_clicked();
+
+    void on_fileinput_clicked();
+
 private:
     Ui::MainWindow *ui;
    Actuator *actuator;
