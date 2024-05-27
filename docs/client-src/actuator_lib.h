@@ -96,6 +96,8 @@ public:
     std::string getFirmwareVersion();
     double getPicoTemperature();
 
+    void resetPi();
+
     std::string getImagingProbe();
 
     EXECUTION_ERRORS getLastError();

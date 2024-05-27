@@ -104,7 +104,11 @@ void send_response(int axis, bool success, std::string warning = "--", std::stri
 
     printf("%s", response.c_str());
 }
-
+/* reset function of Rasbpi PIco*/
+void reset_pico()
+{
+    reset_usb_boot(0, 0);
+}
 /**
 COMMAND FORMAT:
 /device_address axis_number command parameter parameter \n
@@ -430,6 +434,11 @@ void get_commands_from_serial(){
             }
             send_response(axis_number, true);
         }
+    }
+     else if (tokens[2] == "reset")
+    {
+        reset_pico();
+        send_response(axis_number, true);
     }
     else{
         send_response(axis_number, false, "BADDATA");

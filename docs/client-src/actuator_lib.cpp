@@ -1074,6 +1074,23 @@ std::string Actuator::getFirmwareVersion(){
     return _lastResponseData;
 }
 
+void Actuator::resetPi(){
+    // Assemble command
+    std::string command = "/" + std::to_string(_id) + " 0 reset version\n";
+
+    // Set command status to pending and send the command
+    _commandMutex.lock();
+    _lastCommandStatus = PENDING;
+    if(!writeSerial(command)) {
+        _commandMutex.unlock();
+    }
+    _commandMutex.unlock();
+
+    // Wait for command acknoledgement
+    if(!waitForCommandAcknowledge()){
+    }
+}
+
 /**
  * @brief   Get the last error code.
  *          Clears the error code.

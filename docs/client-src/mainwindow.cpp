@@ -7,6 +7,14 @@
 #include <iostream>
 #include <QDebug>
 #include <fstream>
+#include <QFileDialog>
+#include <QUrl>
+#include <QMessageBox>
+#include <QStorageInfo>
+#include <QFile>
+#include <QDir>
+#include <QFileInfo>
+#include <QThread>
 
 const double ZeroOneThresh = 0.42;
 const double OneTwoThresh = 1.01;
@@ -180,7 +188,8 @@ void MainWindow::on_pushButton_Disconnect_clicked()
         qDebug() << "ERROR: Could not disconnect from actuator\n";
         return;
     }
-    
+    delete actuator;
+    actuator=nullptr;
     qDebug() << "Actuator disconnected\n";
 }
 
@@ -212,4 +221,64 @@ void MainWindow::on_setPosBtn_clicked()
     qDebug() << "Actuator Position Set\n";
 
     qDebug() << "Actuator is homed:" << actuator->isHomed(axisInd);
+}
+
+void MainWindow::on_fileinput_clicked()
+{
+    QString sourcefilename =QFileDialog::getOpenFileName(
+        this,
+        tr("Open File"),
+        "",
+        "All files(*.*);;Text File (*.txt);;"
+        );
+
+    if (!sourcefilename.isEmpty()) {
+
+        // Get a list of all available volumes
+        QList<QStorageInfo> volumes = QStorageInfo::mountedVolumes();
+
+        // Iterate through each volume to find the removable disks
+        foreach(const QStorageInfo &storage, volumes) {
+            if (storage.isValid()) {
+                if (storage.displayName() == "RPI-RP2")
+                {
+                QString destinationDirectory = storage.rootPath();
+                QString fileNameOnly = QFileInfo(sourcefilename).fileName();
+                QString destinationFilePath = QDir(destinationDirectory).filePath(fileNameOnly);
+                // Copy the file
+                if (QFile::copy(sourcefilename, destinationFilePath)) {
+                    qDebug() << "File copied successfully to" << destinationDirectory;
+                    QThread::sleep(1) ;
+                    MainWindow::on_pushButton_Connect_clicked();
+                    return;
+                } else {
+                    qDebug() << "Error copying file to" << destinationDirectory;
+                }
+                }
+            }
+        }
+    }
+    else
+    {
+        qDebug() << "No removable disks found.";
+    }
+
+}
+
+void MainWindow::on_reset_clicked()
+{
+    if (actuator)
+    {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "Upload Firmware", "First select the firmware file to upload",
+                                      QMessageBox::Ok | QMessageBox::Cancel );
+        if (reply == QMessageBox::Ok)
+        {
+            actuator->resetPi();
+            MainWindow::on_pushButton_Disconnect_clicked();
+            QThread::msleep(200) ;
+            on_fileinput_clicked();
+        }
+
+    }
 }
