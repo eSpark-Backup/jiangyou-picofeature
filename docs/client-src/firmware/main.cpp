@@ -3,6 +3,7 @@
 #include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "pico/bootrom.h"
 #include "AccelStepper/AccelStepper.h"
 #include <string>
 #include <vector>
