@@ -2,6 +2,11 @@
 
 #include <gtest/gtest.h>
 #include "../actuator_lib.h"
+#include <string>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 
 #define VALID_SERIAL_PORT "/dev/ttyACM0"
 #define INVALID_SERIAL_PORT "/dev/ttyACM1"
@@ -10,6 +15,22 @@
 #define INVALID_DEVICE_ID 2
 
 #define TEST_HOMING_FUNCTION    // Comment out this line to skip homing tests
+
+// Function to copy a file
+bool copyFile(const std::string& sourcePath, const std::string& destinationPath) {
+    std::string command = "cp " + sourcePath + "/main.uf2" + " " + destinationPath;
+    // Execute the command
+    int result = system(command.c_str());
+
+    if (result == 0) {
+        return true;
+    } else {
+        return false;
+    }
+
+}
+
+std::string sourcePath = fs::current_path();
 
 // Manual Connect test
 TEST(ActuatorTest, ManualConnectTest) {
@@ -225,6 +246,28 @@ TEST(ActuatorTest, GetPicoTemperatureTest) {
     actuator.disconnect();
 }
 
+// pico reset test
+TEST(ActuatorTest, ResetPiTest) {
+    Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
+    EXPECT_EQ(actuator.connect(), 1);
+    for (int i=0; i<=300;i++) {
+        actuator.resetPi();
+        EXPECT_EQ(actuator.connect(), 0);
+        actuator.disconnect();
+
+        std::string user = std::getenv("USER");
+        std::string destinationDir = "/media/" + user + "/RPI-RP2";
+        EXPECT_TRUE(copyFile(sourcePath, destinationDir));
+        sleep(1);
+        EXPECT_EQ(actuator.connect(), 1);
+    }
+    actuator.disconnect();
+}
+
+
+
+
+
 // set GPIO test
 class ActuatorTestSetGPIOValid : public testing::TestWithParam<int> {};
 
@@ -336,6 +379,9 @@ int main(int argc, char **argv) {
     // ::testing::GTEST_FLAG(break_on_failure) = true;
     return RUN_ALL_TESTS();
 }
+
+
+
 
 /*
 /1 0
