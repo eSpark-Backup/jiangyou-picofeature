@@ -3,6 +3,10 @@ include(pico_sdk_import.cmake)
 project(usb_actuator_project C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+
+# Enable exception handling
+set(PICO_CXX_ENABLE_EXCEPTIONS 1)
+
 pico_sdk_init()
 
 # add all .cpp and .h files in the AccelStepper library to the project

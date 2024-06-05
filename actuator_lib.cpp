@@ -4,13 +4,9 @@
  * @brief Construct a new Actuator:: Actuator object
  * 
  */
-Actuator::Actuator() : _readSerialThreadGuard(_readSerialThread, &exitThread){
+Actuator::Actuator() : _readSerialThreadGuard(_readSerialThread, &exitThread), _serial("COM1", 115200, serial::Timeout::simpleTimeout(1000)) {
     _id = 1;
-    #if defined (_WIN32) || defined (_WIN64)
-        _port = "\\\\.\\COM1";
-    #else
-        _port = "/dev/ttyUSB0";
-    #endif
+    _port = "COM1";
 }
 
 /**
@@ -19,13 +15,9 @@ Actuator::Actuator() : _readSerialThreadGuard(_readSerialThread, &exitThread){
  * @param id    Actuator ID
  * @param port  Serial COM port e.g. COM1 or /dev/ttyUSB0
  */
-Actuator::Actuator(int id, std::string port) : _readSerialThreadGuard(_readSerialThread, &exitThread) {
+Actuator::Actuator(int id, std::string port) : _readSerialThreadGuard(_readSerialThread, &exitThread), _serial("", 115200, serial::Timeout::simpleTimeout(1000)) {
     _id = id;
-    #if defined (_WIN32) || defined (_WIN64)
-        _port = "\\\\.\\"+port;
-    #else
-        _port = port;
-    #endif
+    _port = port;
 }
 
 /**
@@ -35,38 +27,156 @@ Actuator::Actuator(int id, std::string port) : _readSerialThreadGuard(_readSeria
  * @return false   Not connected
  */
 bool Actuator::connect() {
+    
+    // Check if a port was provided
+    if(_port != "") {
+        consoleOut("INFO: Port provided: " + _port + "\n");
+        try{
+            _serial.setPort(_port);
+            _serial.open();
+        }
+        catch(const std::exception& e)
+        {
+            consoleOut("ERROR: Could not open serial port\n", true);
+            _lastError = SERIAL_OPEN_ERROR;
+            return false;
+        }
+        if(_serial.isOpen()){
+            consoleOut("INFO: Connected to port: " + _port + "\n");
+            
+            // Set DTR
+            _serial.setDTR(true);
+            
+            // Clear RTS
+            _serial.setRTS(false);
 
-    // Open serial port
-    try
-    {
-        if(_serial.openDevice(_port.c_str(), 115200) != 1){
+            // Flush both Buffers
+            _serial.flush();
+
+            // Start readSerial thread
+            exitThread = false;
+            _readSerialThread = std::thread(&Actuator::readSerialThread, this);
+            
+            // Wait for thread to start
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            // Check if this is the correct device
+            std::string version = getFirmwareVersion();
+            if(version != "ERROR"){
+                consoleOut("INFO: Connected to device version: " + version + "\n");
+                return true;
+            }
+            else{
+                consoleOut("ERROR: The device is not compatible.\n", true);
+                _lastError = SERIAL_OPEN_ERROR;
+                
+                // Kill the read thread
+                exitThread = true;
+                _readSerialThread.join();
+                _serial.close();
+                
+                return false;
+            }
+        }
+        else{
             consoleOut("ERROR: Could not open serial port\n", true);
             _lastError = SERIAL_OPEN_ERROR;
             return false;
         }
     }
-    catch(const std::exception& e)
-    {
-        std::cerr << e.what() << '\n';
+
+    consoleOut("INFO: No port provided. Will look for ports automatically.\n");
+
+    // List available ports
+    std::vector<serial::PortInfo> devices_found = serial::list_ports();
+    for (const serial::PortInfo &device : devices_found) {
+        consoleOut("INFO: Found device: " + device.port + " - " + device.description + " - " + device.hardware_id + "\n");
+    }
+
+    // If no ports are found return false
+    if(devices_found.size() == 0){
+        consoleOut("ERROR: No devices found\n", true);
         _lastError = SERIAL_OPEN_ERROR;
         return false;
     }
 
-    // Set DTR
-    _serial.DTR(true);
-    // Clear RTS
-    _serial.RTS(false);
+    // From the found ports, get all ports that have "Board CDC" in the description
+    std::vector<serial::PortInfo> devices_found_filtered;
+    std::copy_if(devices_found.begin(), devices_found.end(), std::back_inserter(devices_found_filtered), [](const serial::PortInfo &device) { return ((device.description.find("Board CDC") != std::string::npos) || (device.description.find("Raspberry Pi Pico") != std::string::npos)); });
 
-    // Flush the receiving buffer.
-    _serial.flushReceiver();
+    // If no ports are found return false
+    if(devices_found_filtered.size() == 0){
+        consoleOut("ERROR: No devices found\n", true);
+        _lastError = SERIAL_OPEN_ERROR;
+        return false;
+    }
 
-    // Start readSerial thread
-    _readSerialThread = std::thread(&Actuator::readSerialThread, this);
-    
-    // Wait for thread to start
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Iterate through the filtered ports and try to connect to the actuator
+    for (const serial::PortInfo &device : devices_found_filtered) {
+        consoleOut("INFO: Trying to connect to port: " + device.port + " - " + device.description + " - " + device.hardware_id + "\n");
+        try{
+            // _serial = serial::Serial(device.port, 115200, serial::Timeout::simpleTimeout(1000));
+            _serial.setPort(device.port);
+            _serial.open();
+            // if(!_serial.isOpen()){
+            //     _serial.open();
+            // }
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+            _lastError = SERIAL_OPEN_ERROR;
+            continue;
+        }
+        if(_serial.isOpen()){
+            consoleOut("INFO: Connected to port: " + device.port + "\n");
+            
+            // Set DTR
+            _serial.setDTR(true);
+            
+            // Clear RTS
+            _serial.setRTS(false);
 
-    return true;
+            // Flush both Buffers
+            _serial.flush();
+
+            // Start readSerial thread
+            exitThread = false;
+            _readSerialThread = std::thread(&Actuator::readSerialThread, this);
+            
+            // Wait for thread to start
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            // Check if this is the correct device
+            std::string version = getFirmwareVersion();
+            if(version != "ERROR"){
+                consoleOut("INFO: Connected to device: " + version + "\n");
+                _port = device.port;
+                return true;
+            }
+            else{
+                consoleOut("ERROR: Could not connect to device\n", true);
+                _lastError = SERIAL_OPEN_ERROR;
+                
+                // Kill the read thread
+                exitThread = true;
+                _readSerialThread.join();
+                _serial.close();
+                
+                continue;
+            }
+        }
+        else{
+            consoleOut("ERROR: Could not open serial port\n", true);
+            _lastError = SERIAL_OPEN_ERROR;
+            continue;
+        }
+    }
+
+    // If no ports are found return false
+    consoleOut("ERROR: No compatible devices found\n", true);
+    _lastError = SERIAL_OPEN_ERROR;
+    return false;
 }
 
 /**
@@ -87,7 +197,7 @@ bool Actuator::disconnect() {
         _readSerialThread.join();
 
         // Close serial port
-        _serial.closeDevice();
+        _serial.close();
     }
     catch(const std::exception& e)
     {
@@ -106,7 +216,7 @@ bool Actuator::disconnect() {
  * @return false 
  */
 bool Actuator::isConnected() {
-    return _serial.isDeviceOpen();
+    return _serial.isOpen();
 }
 
 /**
@@ -128,9 +238,7 @@ std::mutex * Actuator::enableDebug(bool enable) {
  */
 void Actuator::consoleOut(std::string data, bool debugOverride) {
     if(_debugEnabled || debugOverride) {
-        _stdioMutex.lock();
-        std::cout << data;
-        _stdioMutex.unlock();
+        qDebug() << data.c_str();
     }
 }
 
@@ -145,7 +253,7 @@ bool Actuator::writeSerial(std::string data){
     consoleOut(">> " + data);
     try
     {
-        if(_serial.writeString(data.c_str()) != 1){
+        if(_serial.write(data) != data.length()){
             consoleOut("ERROR: Could not write to serial port\n", true);
             _lastError = SERIAL_WRITE_ERROR;
             return false;
@@ -166,23 +274,44 @@ bool Actuator::writeSerial(std::string data){
  */
 void Actuator::readSerialThread() {
     int bytes_read;
-    char buffer[1024];
     std::string response;
 
     consoleOut("INFO: Read serial thread started\n");
 
+    int consecutiveErrors = 0;
+
     // Loop until exitThread is set to true
     while (!exitThread) {
         // Wait for data to be available on the serial port
-        while(_serial.available() < 1 && !exitThread){
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        if(exitThread){
-            break;
-        }
+        try{
+            while(_serial.available() < 1 && !exitThread){
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            if(exitThread){
+                break;
+            }
 
-        // read from serial until the '\n' character is found
-        bytes_read = _serial.readString(buffer, '\n', 1024, 1000);
+            // read from serial until the '\n' character is found
+            // bytes_read = _serial.readString(buffer, '\n', 1024, 1000);
+            bytes_read = _serial.readline(response, 1024, std::string("\n"));
+
+            consecutiveErrors = 0;
+        }
+        catch(const std::exception& e)
+        {
+            if(consecutiveErrors > 10){
+                consoleOut("ERROR: Too many consecutive errors. Exiting read thread\n");
+                _lastError = SERIAL_READ_ERROR;
+                break;
+            }
+
+            consoleOut("ERROR: Error while reading from serial port: " + std::string(e.what()) + "\n");
+            _lastError = SERIAL_READ_ERROR;
+
+            consecutiveErrors++;
+
+            continue;
+        }
 
         // Check for errors
         if(bytes_read < 1){
@@ -196,9 +325,6 @@ void Actuator::readSerialThread() {
             }
             continue;
         }
-
-        // store the response in a string
-        response = std::string(buffer, bytes_read);
 
         // parse response -> @01 0 OK IDLE -- 0
         // look for '@' character
@@ -266,7 +392,12 @@ void Actuator::readSerialThread() {
         }
     }
     
-    consoleOut("INFO: Read serial thread stopped\n");
+    if(!exitThread){
+        consoleOut("ERROR: Read serial thread stopped unexpectedly\n");
+    }
+    else{
+        consoleOut("INFO: Read serial thread stopped\n");
+    }
 }
 
 /**
@@ -284,8 +415,11 @@ bool Actuator::moveRelative(double distance, int axis, double speed, double acce
 
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " move rel " + std::to_string(distance);
     if(speed > 0){
@@ -336,8 +470,11 @@ bool Actuator::moveAbsolute(double position, int axis, double speed, double acce
 
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " move abs " + std::to_string(position);
     if(speed > 0){
@@ -386,8 +523,11 @@ bool Actuator::home(int axis, double speed, bool waitUntilIdle, int timeout){
 
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " home";
     if(speed > 0){
@@ -430,8 +570,11 @@ bool Actuator::stop(int axis, bool waitUntilIdle){
 
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " stop\n";
 
@@ -470,8 +613,11 @@ bool Actuator::isHomed(int axis){
     
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " get home\n";
 
@@ -509,8 +655,11 @@ bool Actuator::isBusy(int axis){
     
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += "\n";
 
@@ -545,6 +694,10 @@ std::vector<double> Actuator::getPosition(int axis){
     std::string command = "/" + std::to_string(_id);
     if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        positions.push_back(-1);
+        return positions;
     }
     command += " get pos\n";
 
@@ -583,7 +736,7 @@ std::vector<double> Actuator::getPosition(int axis){
 /**
  * @brief Get the analog value from a ADC channel.
  * 
- * @param channel   [int] Channel to read (0|1|2)
+ * @param channel   [int] Channel to read (0 to 4)
  * @return int 
  */
 int Actuator::getAnalog(int channel){
@@ -617,8 +770,10 @@ int Actuator::getAnalog(int channel){
 double Actuator::getPicoTemperature()
 {
     //Since the current PICO firmware is not compatible with the feature, calling this function causes firmware crash.
-    int ADC_Voltage = getAnalog(4);
-    double temperature = 27.0 - (ADC_Voltage - 0.706) / 0.001721;
+    int adv_val = getAnalog(4);
+    float convertion_factor = 3.3f / (1 << 12);
+    float voltage = adv_val * convertion_factor;
+    double temperature = 27.0 - (voltage - 0.706) / 0.001721;
     return temperature;//temperature;
 }
 
@@ -632,24 +787,27 @@ std::string Actuator::getImagingProbe()
     const double FiveSixThresh = 2.38;
     const double SixSevenThresh = 2.59;
 
-    double vol = double(getAnalog(1)) / 4096 * 3.3;
+    int adv_val = getAnalog(4);
+    float convertion_factor = 3.3f / (1 << 12);
+    float voltage = adv_val * convertion_factor;
+    // double vol = double(getAnalog(1)) / 4096 * 3.3;
 
     //Adding threshold conditionals
 
     std::string res;
-    if (vol < ZeroOneThresh) {
+    if (voltage < ZeroOneThresh) {
         res = "Zero";
-    } else if (vol >= ZeroOneThresh && vol < OneTwoThresh) {
+    } else if (voltage >= ZeroOneThresh && voltage < OneTwoThresh) {
         res = "One";
-    } else if (vol >= OneTwoThresh && vol < TwoThreeThresh) {
+    } else if (voltage >= OneTwoThresh && voltage < TwoThreeThresh) {
         res = "Two";
-    } else if (vol >= TwoThreeThresh && vol < ThreeFourThresh) {
+    } else if (voltage >= TwoThreeThresh && voltage < ThreeFourThresh) {
         res = "Three";
-    } else if (vol >= ThreeFourThresh && vol < FourFiveThresh) {
+    } else if (voltage >= ThreeFourThresh && voltage < FourFiveThresh) {
         res = "Four";
-    } else if (vol >= FourFiveThresh && vol < FiveSixThresh) {
+    } else if (voltage >= FourFiveThresh && voltage < FiveSixThresh) {
         res = "Five";
-    } else if (vol >= FiveSixThresh && vol < SixSevenThresh) {
+    } else if (voltage >= FiveSixThresh && voltage < SixSevenThresh) {
         res = "Six";
     } else {
         res = "Seven";
@@ -695,10 +853,10 @@ int Actuator::getAxisCount(){
  * @return false 
  */
 bool Actuator::setGPIO(int pin, bool value){
-    // Check if value is valid
-    if(value != 0 && value != 1){
-        return false;
-    }
+    // // Check if value is valid
+    // if(value != 0 && value != 1){
+    //     return false;
+    // }
 
     // Assemble command
     std::string command = "/" + std::to_string(_id) + " 0 set gpio " + std::to_string(pin) + " ";
@@ -737,10 +895,10 @@ bool Actuator::setGPIO(int pin, bool value){
  * @return false 
  */
 bool Actuator::getGPIO(int pin){
-    // Confirm pin is valid
-    if(pin < 0 || pin > 28){
-        return false;
-    }
+    // // Confirm pin is valid
+    // if(pin < 0 || pin > 28){
+    //     return false;
+    // }
 
     // Assemble command
     std::string command = "/" + std::to_string(_id) + " 0 get gpio " + std::to_string(pin) + "\n";
@@ -821,8 +979,11 @@ bool Actuator::waitUntilIdleFun(int axis, int timeout)
 bool Actuator::setPosition(double position, int axis){
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " set pos " + std::to_string(position) + "\n";
 
@@ -860,8 +1021,11 @@ bool Actuator::setDirection(int direction, int axis){
 
     // Assemble command
     std::string command = "/" + std::to_string(_id);
-    if(axis > 0){
+    if(axis >= 0){
         command += " " + std::to_string(axis);
+    }
+    else{
+        return false;
     }
     command += " set dir " + std::to_string(direction) + "\n";
 

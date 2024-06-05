@@ -2,8 +2,6 @@
 #ifndef ACTUATOR_LIB_H
 #define ACTUATOR_LIB_H
 
-// #include <windows.h>
-#include "serialib.h"
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -11,6 +9,16 @@
 #include <mutex>
 #include <vector>
 #include <atomic>
+#include <algorithm>
+
+// Check if we are compiling in Qt Creator
+#ifdef QT_CREATOR 
+#include <QDebug>
+#else
+#define qDebug() std::cout
+#endif
+
+#include "serial/serial.h"
 
 #define MAX_AXIS_COUNT 5
 #define COMMAND_TIMEOUT 5000
@@ -113,14 +121,13 @@ private:
     std::string _lastResponseData;
 
     bool exitThread = false;
-    // std::mutex _serialMutex;
     std::mutex _stdioMutex;
     std::mutex _commandMutex;
     std::thread _readSerialThread;
 
     ThreadGuard _readSerialThreadGuard;
 
-    serialib _serial;
+    serial::Serial _serial;
 
     EXECUTION_ERRORS _lastError;
 };

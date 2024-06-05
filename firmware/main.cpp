@@ -3,11 +3,12 @@
 #include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "pico/bootrom.h"
 #include "AccelStepper/AccelStepper.h"
 #include <string>
 #include <vector>
 
-#define FIRMWARE_VERSION "1.4"
+#define FIRMWARE_VERSION "1.6"
 
 #define STEPS_PER_REV 3200.00
 #define SPEED_MM_PER_SEC 10.00
@@ -109,7 +110,6 @@ void reset_pico()
 {
     reset_usb_boot(0, 0);
 }
-
 /**
 COMMAND FORMAT:
 /device_address axis_number command parameter parameter \n
@@ -157,16 +157,34 @@ void get_commands_from_serial(){
     //     printf("%s\n", tokens[i].c_str());
     // }
 
-    int device_address = std::stoi(tokens[0]);
+    // TODO: Add a mechanism to test if device address and axis number tokens are integers.
+    // Else, the program will crash if the tokens are not integers.
+    
+    int device_address = -1;
+    try{
+        device_address = std::stoi(tokens[0]);
+    }catch(std::exception e){
+        printf("Invalid device address\n");
+        send_response(0, false, "BADDATA");
+        return;
+    }
     if(device_address != DEVICE_ADDRESS){
         printf("Wrong device address\n");
         return;
     }
 
-    int axis_number = std::stoi(tokens[1]);
-    if(axis_number < 0){
+    int axis_number = -1;
+    try{
+        axis_number = std::stoi(tokens[1]);
+    }
+    catch(std::exception e){
         printf("Invalid axis number\n");
         send_response(axis_number, false, "BADDATA");
+        return;
+    }
+    if(axis_number < 0 || axis_number > AXIS_COUNT){
+        printf("Invalid axis number\n");
+        send_response(0, false, "BADDATA");
         return;
     }
 
@@ -240,7 +258,7 @@ void get_commands_from_serial(){
         else if(tokens[3] == "adc"){
             if(tokens.size() > 4){
                 int adc_channel = std::stoi(tokens[4]);
-                if(adc_channel < 0 || adc_channel >= 3){
+                if(adc_channel < 0 || adc_channel > 4){
                     send_response(axis_number, false, "BADDATA");
                 }
                 else{
@@ -368,8 +386,12 @@ void get_commands_from_serial(){
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
-            send_response(axis_number, true);
             int pin = std::stoi(tokens[4]);
+            if(pin < 0 || pin > 28){
+                send_response(axis_number, false, "BADDATA");
+                return;
+            }
+            send_response(axis_number, true);
             int value = std::stoi(tokens[5]);
             gpio_init(pin);
             gpio_set_dir(pin, GPIO_OUT);
@@ -446,6 +468,9 @@ int main() {
     adc_gpio_init(26);
     adc_gpio_init(27);
     adc_gpio_init(28);
+    adc_gpio_init(29);
+
+    adc_set_temp_sensor_enabled(true);
 
     multicore_launch_core1(serial_thread);
     //multicore_fifo_pop_blocking();

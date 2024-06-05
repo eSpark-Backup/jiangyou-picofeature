@@ -1,3 +1,0 @@
-/home/leadoptik/Pico Code v1.4/Pico Code/usb-actuator/build/pioasm/CMakeFiles/pioasm.dir
-/home/leadoptik/Pico Code v1.4/Pico Code/usb-actuator/build/pioasm/CMakeFiles/edit_cache.dir
-/home/leadoptik/Pico Code v1.4/Pico Code/usb-actuator/build/pioasm/CMakeFiles/rebuild_cache.dir
