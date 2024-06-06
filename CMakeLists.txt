@@ -17,6 +17,7 @@ add_executable(actuator_lib
 test/test_main.cpp
 actuator_lib.cpp
 )
+configure_file(test/main.uf2 main.uf2 COPYONLY)
 
 # Recursively add all files in the "serial" directory
 file(GLOB_RECURSE SERIAL_SOURCES "serial/*.cc")
