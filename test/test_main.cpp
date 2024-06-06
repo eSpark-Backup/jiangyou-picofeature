@@ -247,26 +247,28 @@ TEST(ActuatorTest, GetPicoTemperatureTest) {
 }
 
 // pico reset test
-TEST(ActuatorTest, ResetPiTest) {
+class ActuatorTestResetPi : public testing::TestWithParam<int> {};
+
+TEST_P(ActuatorTestResetPi, ResetPiTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
     EXPECT_EQ(actuator.connect(), 1);
-    for (int i=0; i<=300;i++) {
-        actuator.resetPi();
-        EXPECT_EQ(actuator.connect(), 0);
-        actuator.disconnect();
+    actuator.resetPi();
+    EXPECT_EQ(actuator.connect(), 0);
+    actuator.disconnect();
 
-        std::string user = std::getenv("USER");
-        std::string destinationDir = "/media/" + user + "/RPI-RP2";
-        EXPECT_TRUE(copyFile(sourcePath, destinationDir));
-        sleep(1);
-        EXPECT_EQ(actuator.connect(), 1);
-    }
+    std::string user = std::getenv("USER");
+    std::string destinationDir = "/media/" + user + "/RPI-RP2";
+    EXPECT_TRUE(copyFile(sourcePath, destinationDir));
+    sleep(1);
+    EXPECT_EQ(actuator.connect(), 1);
     actuator.disconnect();
 }
 
-
-
-
+INSTANTIATE_TEST_SUITE_P(
+        ActuatorTestResetPiInstances,
+        ActuatorTestResetPi,
+        ::testing::Range(0, 300)
+);
 
 // set GPIO test
 class ActuatorTestSetGPIOValid : public testing::TestWithParam<int> {};
