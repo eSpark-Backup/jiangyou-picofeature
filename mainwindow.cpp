@@ -118,26 +118,7 @@ void MainWindow::on_pushButton_MoveAbs_clicked()
         qDebug() << "ERROR: Could not move actuator\n";
     }
     qDebug() << "Actuator Moved\n";
-    const int gpioPins[] = {0, 1, 11, 28};
 
-    for (int pin : gpioPins)
-    {
-        // Set GPIO pin to 0
-        actuator->setGPIO(pin, 0);
-        qDebug() << "Set GPIO Pin" << pin << "to 0";
-
-        // Get and log the status of the GPIO pin
-        int gpioStatus = actuator->getGPIO(pin);
-        qDebug() << "GPIO Pin" << pin << "Status is :"<< gpioStatus;
-
-        // Set GPIO pin to 1
-        actuator->setGPIO(pin, 1);
-        qDebug() << "Set GPIO Pin" << pin << "to 1";
-
-        // Get and log the status of the GPIO pin
-        gpioStatus = actuator->getGPIO(pin);
-        qDebug() << "GPIO Pin" << pin << "Status is :" << gpioStatus;
-    }
 }
 
 void MainWindow::on_pushButton_MoveRel_clicked()
@@ -163,26 +144,7 @@ void MainWindow::on_pushButton_MoveRel_clicked()
         qDebug() << "ERROR: Could not move actuator\n";
     }
     qDebug() << "Actuator Moved\n";
-    const int gpioPins[] = {0, 1, 11, 28};
-
-    for (int pin : gpioPins)
-    {
-        // Set GPIO pin to 0
-        actuator->setGPIO(pin, 0);
-        qDebug() << "Set GPIO Pin" << pin << "to 0";
-
-        // Get and log the status of the GPIO pin
-        int gpioStatus = actuator->getGPIO(pin);
-        qDebug() << "GPIO Pin" << pin << "Status is :"<< gpioStatus;
-
-        // Set GPIO pin to 1
-        actuator->setGPIO(pin, 1);
-        qDebug() << "Set GPIO Pin" << pin << "to 1";
-
-        // Get and log the status of the GPIO pin
-        gpioStatus = actuator->getGPIO(pin);
-        qDebug() << "GPIO Pin" << pin << "Status is :" << gpioStatus;
-    }
+    
 }
 
 void MainWindow::on_pushButton_Connect_clicked()
