@@ -308,14 +308,7 @@ class ActuatorTestGetGPIOValid : public testing::TestWithParam<int> {};
 TEST_P(ActuatorTestGetGPIOValid, GetGPIOTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
     actuator.connect();
-    EXECUTION_ERRORS lastError = actuator.getLastError();
-    if(lastError != _NO_ERROR && actuator.getErrorString(lastError)!= "Unknown error")
-    {
-        std::cerr << "Test aborted due to no error: " << actuator.getErrorString(lastError) << std::endl;
-        actuator.disconnect();
-        return;
-    }
-    
+    actuator.getLastError(); 
     int pin = GetParam();
     actuator.setGPIO(pin, 1);
     EXPECT_EQ(actuator.getGPIO(pin), 1);
