@@ -154,10 +154,36 @@ TEST(ActuatorTest, HomeTestWithWait) {
 // move Relative test
 TEST(ActuatorTest, MoveRelativeTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
-    actuator.connect();
-    EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), 1);
-    // disconnect
-    actuator.disconnect();
+    auto startTime = std::chrono::steady_clock::now();
+    while (true)
+    {
+        std::cout << "Test GPIO before Move Relative command"<< std::endl;
+        ActuatorTest::GetGPIOTest(0);
+        ActuatorTest::GetGPIOTest(1);
+        ActuatorTest::GetGPIOTest(11);
+        ActuatorTest::GetGPIOTest(28);
+        actuator.connect();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Perform the moveRelative test
+        std::cout << "Testing moveRelative command....."<< std::endl;
+        EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), 1);
+        actuator.disconnect();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Call the GPIO test with different pin values using the same actuator connection
+        std::cout << "Test GPIO after Move Relative command"<< std::endl;
+        ActuatorTest::GetGPIOTest(0);
+        ActuatorTest::GetGPIOTest(1);
+        ActuatorTest::GetGPIOTest(11);
+        ActuatorTest::GetGPIOTest(28);
+
+        // std::this_thread::sleep_for(std::chrono::minutes(5));
+        auto endTime = std::chrono::steady_clock::now(); // Record end time
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::hours>(endTime - startTime);
+        if (elapsedTime.count() >= 8) { // Check if 8 hours have passed
+            std::cout << "Total hours of running is : " <<elapsedTime.count()<< std::endl;
+            break;
+        }
+    }
 }
 
 // move Absolute test
