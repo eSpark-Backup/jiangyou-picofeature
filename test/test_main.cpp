@@ -230,10 +230,10 @@ TEST(ActuatorTest, MoveRelativeTest)
     while (true)
     {
         auto endTime = std::chrono::steady_clock::now(); // Record end time
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::minutes>(endTime - startTime);
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::hours>(endTime - startTime);
 
-        if (elapsedTime.count() >= 1) { // Check if 1 minute has passed
-            std::cout << "Total minutes of running is : " << elapsedTime.count() << std::endl;
+        if (elapsedTime.count() >= 8) { // Check if 1 minute has passed
+            std::cout << "Total hours of running is : " << elapsedTime.count() << std::endl;
             stopRequested = true; // Request threads to stop
             break;
         }
