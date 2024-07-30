@@ -32,6 +32,22 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath)
 
 std::string sourcePath = fs::current_path();
 
+class ActuatorTest : public testing::Test {
+public: // Make GetGPIOTest public
+    static void GetGPIOTest(int pin) {
+        Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
+        actuator.connect();
+        actuator.getLastError();
+        actuator.setGPIO(pin, 1);
+        EXPECT_EQ(actuator.getGPIO(pin), 1);
+        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+        actuator.setGPIO(pin, 0);
+        EXPECT_EQ(actuator.getGPIO(pin), 0);
+        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+        actuator.disconnect();
+    }
+};
+
 // Manual Connect test
 TEST(ActuatorTest, ManualConnectTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
@@ -151,105 +167,44 @@ TEST(ActuatorTest, HomeTestWithWait) {
 
 #endif
 
-// GPIO test new class
-class ActuatorTest : public testing::Test {
-public: // Make GetGPIOTest public
-    static void GetGPIOTest(int pin) {
-        Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
-        actuator.connect();
-        // actuator.getLastError();
-        actuator.setGPIO(pin, 1);
-        EXPECT_EQ(actuator.getGPIO(pin), 1);
-        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-        actuator.setGPIO(pin, 0);
-        EXPECT_EQ(actuator.getGPIO(pin), 0);
-        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-        actuator.disconnect();
-    }
-};
-
 std::atomic<bool> stopRequested(false);
 
 // Mutex to protect GPIO and serial port access
 std::mutex gpioMutex;
 std::mutex serialMutex;
 
-void runGPIOTests()
-{
-    std::vector<int> gpioPins = {0, 1, 11, 28};
-    while (!stopRequested)
-    {
-        {
-            std::lock_guard<std::mutex> lock(gpioMutex); // Lock GPIO access
-            std::cout << "Test GPIO command" << std::endl;
-            for (int pin : gpioPins)
-            {
-                ActuatorTest::GetGPIOTest(pin);
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-            // ActuatorTest::GetGPIOTest(1);
-            // ActuatorTest::GetGPIOTest(11);
-            // ActuatorTest::GetGPIOTest(28);
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // Adjust sleep duration as needed
-    }
+void runGPIOTests(Actuator& actuator) {
+    std::cout << "Testing GPIO..." << std::endl;
+    ActuatorTest::GetGPIOTest(0);
+    ActuatorTest::GetGPIOTest(1);
+    ActuatorTest::GetGPIOTest(11);
+    ActuatorTest::GetGPIOTest(28);
 }
 
-void runMoveRelativeTest(Actuator& actuator)
-{
-    while (!stopRequested)
-    {
-        try
-        {
-            {
-                std::lock_guard<std::mutex> lock(serialMutex); // Lock serial port access
-                actuator.connect();
-                std::cout << "Testing moveRelative command....." << std::endl;
-                EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), 1);
-                actuator.disconnect();
-            }
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "Caught EXCEPTION: " << e.what() << std::endl;
-            // Handle retry logic or cleanup here
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // Adjust sleep duration as needed
-    }
-}
-
-TEST(ActuatorTest, MoveRelativeTest)
-{
+TEST(ActuatorTest, MoveRelativeTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
     auto startTime = std::chrono::steady_clock::now();
-
-    // Start threads for GPIO tests and moveRelative test
-    std::thread moveRelativeThread(runMoveRelativeTest, std::ref(actuator));
-    std::thread gpioThread(runGPIOTests);
-
     while (true)
     {
+        std::cout << "Test GPIO command"<< std::endl;
+        runGPIOTests(actuator);
+        actuator.connect();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Perform the moveRelative test
+        std::cout << "Testing moveRelative command....."<< std::endl;
+        EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), 1);
+        actuator.disconnect();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         auto endTime = std::chrono::steady_clock::now(); // Record end time
         auto elapsedTime = std::chrono::duration_cast<std::chrono::hours>(endTime - startTime);
-
-        if (elapsedTime.count() >= 8) { // Check if 1 minute has passed
-            std::cout << "Total hours of running is : " << elapsedTime.count() << std::endl;
-            stopRequested = true; // Request threads to stop
+        if (elapsedTime.count() >= 8) { // Check if 8 hours have passed
+            std::cout << "Total hours of running is : " <<elapsedTime.count()<< std::endl;
             break;
         }
     }
-
-    // Wait for threads to finish (join instead of detach for proper cleanup)
-    gpioThread.detach(); // Or use a more sophisticated way to stop threads
-    moveRelativeThread.detach(); // Or use a more sophisticated way to stop threads
-
-    if (gpioThread.joinable()) {
-        gpioThread.join();
-    }
-    if (moveRelativeThread.joinable()) {
-        moveRelativeThread.join();
-    }
 }
+std::mutex actuatorMutex;
+
 // move Absolute test
 TEST(ActuatorTest, MoveAbsoluteTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
