@@ -167,12 +167,6 @@ TEST(ActuatorTest, HomeTestWithWait) {
 
 #endif
 
-std::atomic<bool> stopRequested(false);
-
-// Mutex to protect GPIO and serial port access
-std::mutex gpioMutex;
-std::mutex serialMutex;
-
 void runGPIOTests(Actuator& actuator) {
     std::cout << "Testing GPIO..." << std::endl;
     ActuatorTest::GetGPIOTest(0);
@@ -183,22 +177,58 @@ void runGPIOTests(Actuator& actuator) {
 
 TEST(ActuatorTest, MoveRelativeTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
-    auto startTime = std::chrono::steady_clock::now();
-    while (true)
-    {
-        std::cout << "Test GPIO command"<< std::endl;
-        runGPIOTests(actuator);
-        actuator.connect();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        // Perform the moveRelative test
-        std::cout << "Testing moveRelative command....."<< std::endl;
-        EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), 1);
-        actuator.disconnect();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        auto endTime = std::chrono::steady_clock::now(); // Record end time
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::hours>(endTime - startTime);
-        if (elapsedTime.count() >= 8) { // Check if 8 hours have passed
-            std::cout << "Total hours of running is : " <<elapsedTime.count()<< std::endl;
+
+    int iteration_Control = 10; // set the value of ittration
+    int timer_interrupt = 5; // set the interrupt value in sec.
+
+    const std::chrono::seconds gpioTestInterval(timer_interrupt); // Set the interval to 2 seconds
+
+    auto StartTime = std::chrono::steady_clock::now(); // Start of the entire test
+    auto startTime = std::chrono::steady_clock::now(); // Start of the interval
+
+    while (true) {
+        for (int i = 0; i < iteration_Control; i++) {
+            auto endTime = std::chrono::steady_clock::now();
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+
+            // Check if it's time to run GPIO tests every 2 seconds
+            if (elapsedTime >= gpioTestInterval) {
+                runGPIOTests(actuator);
+                startTime = std::chrono::steady_clock::now(); // Reset the interval timer
+            } else {
+                std::cout << "Testing moveRelative command..." << std::endl;
+                try {
+                    actuator.connect();
+
+                    // Get the starting time point for the moveRelative operation
+                    auto movRelStartTime = std::chrono::steady_clock::now();
+
+                    // Perform the moveRelative operation
+                    EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), true);
+
+                    // Get the ending time point for the moveRelative operation
+                    auto movRelEndTime = std::chrono::steady_clock::now();
+                    // Calculate the duration of the moveRelative operation
+                    auto movRelDuration = std::chrono::duration_cast<std::chrono::milliseconds>(movRelEndTime - movRelStartTime);
+
+                    std::cout << "MoveRelative iteration " << i + 1 << " took "
+                              << movRelDuration.count() << " ms." << std::endl;
+
+                } catch (const std::exception& e) {
+                    std::cerr << "Caught EXCEPTION: " << e.what() << std::endl;
+                }
+            }
+
+            actuator.disconnect();
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            // Do not reset startTime here; it should only be reset after running GPIO tests
+        }
+
+        // Check the elapsed time since the start of the test
+        auto EndTime = std::chrono::steady_clock::now();
+        auto ElapsedTime = std::chrono::duration_cast<std::chrono::hours>(EndTime - StartTime);
+        if (ElapsedTime.count() >= 8) { // Check if 2 hours have passed
+            std::cout << "Total hourse of running is: " << ElapsedTime.count() << std::endl;
             break;
         }
     }
