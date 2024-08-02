@@ -180,6 +180,7 @@ TEST(ActuatorTest, MoveRelativeTest) {
 
     int iteration_Control = 10; // set the value of ittration
     int timer_interrupt = 5; // set the interrupt value in sec.
+    int Total_Hours = 8 // set the total hours to run the test
 
     const std::chrono::seconds gpioTestInterval(timer_interrupt); // Set the interval to 2 seconds
 
@@ -227,7 +228,7 @@ TEST(ActuatorTest, MoveRelativeTest) {
         // Check the elapsed time since the start of the test
         auto EndTime = std::chrono::steady_clock::now();
         auto ElapsedTime = std::chrono::duration_cast<std::chrono::hours>(EndTime - StartTime);
-        if (ElapsedTime.count() >= 8) { // Check if 2 hours have passed
+        if (ElapsedTime.count() >= Total_Hours) { // Check if 2 hours have passed
             std::cout << "Total hourse of running is: " << ElapsedTime.count() << std::endl;
             break;
         }
