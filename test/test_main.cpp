@@ -245,7 +245,7 @@ TEST(ActuatorTest, MoveRelativeTest) {
             actuator.disconnect();
 
             auto EndTime = std::chrono::steady_clock::now();
-            auto ElapsedTime = std::chrono::duration_cast<std::chrono::minutes>(EndTime - StartTime);
+            auto ElapsedTime = std::chrono::duration_cast<std::chrono::hours>(EndTime - StartTime);
             if (ElapsedTime.count() >= Total_Hours) {
                 std::cout << "Total hours of running is: " << ElapsedTime.count() << std::endl;
                 break;
