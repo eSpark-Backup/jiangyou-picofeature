@@ -3,7 +3,15 @@
 #include <gtest/gtest.h>
 #include "../actuator_lib.h"
 #include <string>
+#include <chrono>
+#include <iostream>
+#include "qobject.h"
+
+#include <thread>
+#include "test_main.moc"
+#include <QCoreApplication>
 #include <filesystem>
+#include "GetGPIOTest.h"
 
 namespace fs = std::filesystem;
 
@@ -32,21 +40,21 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath)
 
 std::string sourcePath = fs::current_path();
 
-class ActuatorTest : public testing::Test {
-public: // Make GetGPIOTest public
-    static void GetGPIOTest(int pin) {
-        Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
-        actuator.connect();
-        actuator.getLastError();
-        actuator.setGPIO(pin, 1);
-        EXPECT_EQ(actuator.getGPIO(pin), 1);
-        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-        actuator.setGPIO(pin, 0);
-        EXPECT_EQ(actuator.getGPIO(pin), 0);
-        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-        actuator.disconnect();
-    }
-};
+// class ActuatorTest : public testing::Test {
+// public: // Make GetGPIOTest public
+//     static void GetGPIOTest(int pin) {
+//         Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
+//         actuator.connect();
+//         actuator.getLastError();
+//         actuator.setGPIO(pin, 1);
+//         EXPECT_EQ(actuator.getGPIO(pin), 1);
+//         EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+//         actuator.setGPIO(pin, 0);
+//         EXPECT_EQ(actuator.getGPIO(pin), 0);
+//         EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+//         actuator.disconnect();
+//     }
+// };
 
 // Manual Connect test
 TEST(ActuatorTest, ManualConnectTest) {
@@ -175,66 +183,83 @@ void runGPIOTests(Actuator& actuator) {
     ActuatorTest::GetGPIOTest(28);
 }
 
+class ActuatorTest : public testing::Test {
+public: // Make GetGPIOTest public
+    static void GetGPIOTest(int pin) {
+        Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
+        actuator.connect();
+        actuator.getLastError();
+        actuator.setGPIO(pin, 1);
+        EXPECT_EQ(actuator.getGPIO(pin), 1);
+        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+        actuator.setGPIO(pin, 0);
+        EXPECT_EQ(actuator.getGPIO(pin), 0);
+        EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+        actuator.disconnect();
+    }
+};
+
+void runGPIOTests(Actuator* actuator) {
+    std::cout << "Testing GPIO..." << std::endl;
+    ActuatorTest::GetGPIOTest(0);
+    ActuatorTest::GetGPIOTest(1);
+    ActuatorTest::GetGPIOTest(11);
+    ActuatorTest::GetGPIOTest(28);
+}
+
 TEST(ActuatorTest, MoveRelativeTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
 
-    int iteration_Control = 10; // set the value of ittration
-    int timer_interrupt = 5; // set the interrupt value in sec.
-    int Total_Hours = 8 // set the total hours to run the test
-
-    const std::chrono::seconds gpioTestInterval(timer_interrupt); // Set the interval to 2 seconds
+    int iteration_Control = 10; // Set the value of iteration
+    int timer_interrupt = 3; // Set the interrupt value in seconds
+    int Total_Hours = 2; // Set the total hours to run the test
 
     auto StartTime = std::chrono::steady_clock::now(); // Start of the entire test
-    auto startTime = std::chrono::steady_clock::now(); // Start of the interval
+
+    int argc = 0;
+    char* argv[] = { nullptr };
+    QCoreApplication app(argc, argv);
+
+    GPIOTestWorker gpioWorker(actuator, timer_interrupt);
+    gpioWorker.start();
 
     while (true) {
-        for (int i = 0; i < iteration_Control; i++) {
-            auto endTime = std::chrono::steady_clock::now();
-            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+        std::cout << "Testing moveRelative command..." << std::endl;
+        try {
+            actuator.connect();
 
-            // Check if it's time to run GPIO tests every 2 seconds
-            if (elapsedTime >= gpioTestInterval) {
-                runGPIOTests(actuator);
-                startTime = std::chrono::steady_clock::now(); // Reset the interval timer
-            } else {
-                std::cout << "Testing moveRelative command..." << std::endl;
-                try {
-                    actuator.connect();
+            for (int i = 0; i < iteration_Control; i++) {
+                auto movRelStartTime = std::chrono::steady_clock::now();
 
-                    // Get the starting time point for the moveRelative operation
-                    auto movRelStartTime = std::chrono::steady_clock::now();
+                EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), true);
 
-                    // Perform the moveRelative operation
-                    EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), true);
+                auto movRelEndTime = std::chrono::steady_clock::now();
+                auto movRelDuration = std::chrono::duration_cast<std::chrono::milliseconds>(movRelEndTime - movRelStartTime);
 
-                    // Get the ending time point for the moveRelative operation
-                    auto movRelEndTime = std::chrono::steady_clock::now();
-                    // Calculate the duration of the moveRelative operation
-                    auto movRelDuration = std::chrono::duration_cast<std::chrono::milliseconds>(movRelEndTime - movRelStartTime);
+                std::cout << "MoveRelative iteration " << i + 1 << " took "
+                          << movRelDuration.count() << " ms." << std::endl;
 
-                    std::cout << "MoveRelative iteration " << i + 1 << " took "
-                              << movRelDuration.count() << " ms." << std::endl;
-
-                } catch (const std::exception& e) {
-                    std::cerr << "Caught EXCEPTION: " << e.what() << std::endl;
-                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             }
 
             actuator.disconnect();
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            // Do not reset startTime here; it should only be reset after running GPIO tests
-        }
 
-        // Check the elapsed time since the start of the test
-        auto EndTime = std::chrono::steady_clock::now();
-        auto ElapsedTime = std::chrono::duration_cast<std::chrono::hours>(EndTime - StartTime);
-        if (ElapsedTime.count() >= Total_Hours) { // Check if 2 hours have passed
-            std::cout << "Total hourse of running is: " << ElapsedTime.count() << std::endl;
-            break;
+            auto EndTime = std::chrono::steady_clock::now();
+            auto ElapsedTime = std::chrono::duration_cast<std::chrono::minutes>(EndTime - StartTime);
+            if (ElapsedTime.count() >= Total_Hours) {
+                std::cout << "Total hours of running is: " << ElapsedTime.count() << std::endl;
+                break;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught EXCEPTION: " << e.what() << std::endl;
+            break; // Exit loop on exception
         }
     }
+
+    gpioWorker.quit(); // Request the QThread to quit
+    gpioWorker.wait(); // Wait for the QThread to finish
 }
-std::mutex actuatorMutex;
+
 
 // move Absolute test
 TEST(ActuatorTest, MoveAbsoluteTest) {
