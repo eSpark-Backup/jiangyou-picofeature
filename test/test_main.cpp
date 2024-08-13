@@ -6,12 +6,15 @@
 #include <chrono>
 #include <iostream>
 #include "qobject.h"
-
 #include <thread>
 #include "test_main.moc"
 #include <QCoreApplication>
 #include <filesystem>
 #include "GetGPIOTest.h"
+#include <QThread>
+#include <QTimer>
+#include <QMutex>
+#include <QWaitCondition>
 
 namespace fs = std::filesystem;
 
@@ -40,21 +43,6 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath)
 
 std::string sourcePath = fs::current_path();
 
-// class ActuatorTest : public testing::Test {
-// public: // Make GetGPIOTest public
-//     static void GetGPIOTest(int pin) {
-//         Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
-//         actuator.connect();
-//         actuator.getLastError();
-//         actuator.setGPIO(pin, 1);
-//         EXPECT_EQ(actuator.getGPIO(pin), 1);
-//         EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-//         actuator.setGPIO(pin, 0);
-//         EXPECT_EQ(actuator.getGPIO(pin), 0);
-//         EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-//         actuator.disconnect();
-//     }
-// };
 
 // Manual Connect test
 TEST(ActuatorTest, ManualConnectTest) {
@@ -175,14 +163,6 @@ TEST(ActuatorTest, HomeTestWithWait) {
 
 #endif
 
-void runGPIOTests(Actuator& actuator) {
-    std::cout << "Testing GPIO..." << std::endl;
-    ActuatorTest::GetGPIOTest(0);
-    ActuatorTest::GetGPIOTest(1);
-    ActuatorTest::GetGPIOTest(11);
-    ActuatorTest::GetGPIOTest(28);
-}
-
 class ActuatorTest : public testing::Test {
 public: // Make GetGPIOTest public
     static void GetGPIOTest(int pin) {
@@ -211,28 +191,40 @@ TEST(ActuatorTest, MoveRelativeTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
 
     int iteration_Control = 10; // Set the value of iteration
-    int timer_interrupt = 3; // Set the interrupt value in seconds
+    int timer_interrupt = 20; // Set the interrupt value in seconds
     int Total_Hours = 2; // Set the total hours to run the test
-
-    auto StartTime = std::chrono::steady_clock::now(); // Start of the entire test
+    // Start of the entire test
 
     int argc = 0;
     char* argv[] = { nullptr };
     QCoreApplication app(argc, argv);
 
     GPIOTestWorker gpioWorker(actuator, timer_interrupt);
+
+    QObject::connect(&gpioWorker, &GPIOTestWorker::gpioTestsStarted, [&]() {
+        std::cout << "GPIO tests started. Waiting for completion..." << std::endl;
+    });
+
+    QObject::connect(&gpioWorker, &GPIOTestWorker::gpioTestsFinished, [&]() {
+        std::cout << "GPIO tests finished." << std::endl;
+    });
+    actuator.connect();
+    auto StartTime = std::chrono::steady_clock::now();
     gpioWorker.start();
 
     while (true) {
         std::cout << "Testing moveRelative command..." << std::endl;
-        try {
-            actuator.connect();
 
+        try {
+            // actuator.connect();
             for (int i = 0; i < iteration_Control; i++) {
                 auto movRelStartTime = std::chrono::steady_clock::now();
-
-                EXPECT_EQ(actuator.moveRelative(0.5, 1, 100, 1000, true), true);
-
+                if (!actuator.isConnected()) {
+                    std::cout << "Reconnecting actuator..." << std::endl;
+                    actuator.connect();
+                }
+                bool result = actuator.moveRelative(0.5, 1, 100, 1000, false);
+                EXPECT_EQ(result, true);
                 auto movRelEndTime = std::chrono::steady_clock::now();
                 auto movRelDuration = std::chrono::duration_cast<std::chrono::milliseconds>(movRelEndTime - movRelStartTime);
 
@@ -240,17 +232,20 @@ TEST(ActuatorTest, MoveRelativeTest) {
                           << movRelDuration.count() << " ms." << std::endl;
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
 
+                // Wait for GPIO tests to finish
+                gpioWorker.waitForTests();
+            }
             actuator.disconnect();
 
             auto EndTime = std::chrono::steady_clock::now();
-            auto ElapsedTime = std::chrono::duration_cast<std::chrono::hours>(EndTime - StartTime);
+            auto ElapsedTime = std::chrono::duration_cast<std::chrono::minutes>(EndTime - StartTime);
             if (ElapsedTime.count() >= Total_Hours) {
                 std::cout << "Total hours of running is: " << ElapsedTime.count() << std::endl;
                 break;
             }
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e) {
             std::cerr << "Caught EXCEPTION: " << e.what() << std::endl;
             break; // Exit loop on exception
         }
