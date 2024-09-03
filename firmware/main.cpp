@@ -53,6 +53,7 @@
 #define NACK 0x15
 // Timeout settings
 #define PACKET_TIMEOUT_MS 20
+#define INTERRUPT_TIMEOUT_MS 100
 
 volatile bool packet_ready = false;
 volatile uint8_t packet[PACKET_SIZE];
@@ -60,6 +61,7 @@ volatile uint8_t packet_index = 0;
 volatile uint32_t packet_received_count = 0;
 volatile uint32_t packet_lost_count = 0;
 volatile absolute_time_t packet_start_time;
+volatile absolute_time_t last_interrupt_time;
 
 float mm_per_rev[AXIS_COUNT] = {1.27, 1.27};
 
@@ -636,6 +638,7 @@ void uart_isr(void)
     if (uart_is_readable(UART_ID))
     {
         uint8_t byte = uart_getc(UART_ID);
+        last_interrupt_time = get_absolute_time();
         // If packet_index is 0 and we get the HEADER, start a new packet
         if (packet_index == 0 && byte == HEADER)
         {
@@ -669,8 +672,6 @@ void uart_isr(void)
         }
     }
 }
-
-
 
 void process_packet(void)
 {
@@ -831,7 +832,7 @@ int main()
         axisSpeed[i] = 200;
         steppers[i]->setMaxSpeed(axisSpeed[i]);
     }
-
+    last_interrupt_time = get_absolute_time();
     while (1)
     {
         if (packet_index > 0)
@@ -847,6 +848,17 @@ int main()
                 packet_lost_count++; // Increment lost packet count
             }
         }
+
+        absolute_time_t current_time = get_absolute_time();
+        int64_t interrupt_delay_ms = absolute_time_diff_us(last_interrupt_time, current_time) / 1000;
+
+        if (interrupt_delay_ms > INTERRUPT_TIMEOUT_MS) {
+            packet_lost_count++;
+            last_interrupt_time = current_time; // Reset interrupt time
+        }
+
+
+
         if (packet_ready)
         {
             process_packet();
