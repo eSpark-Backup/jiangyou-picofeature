@@ -3,6 +3,8 @@
 #include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "hardware/uart.h"
+#include "hardware/timer.h"
 #include "pico/bootrom.h"
 #include "AccelStepper/AccelStepper.h"
 #include <string>
@@ -15,6 +17,49 @@
 #define DEVICE_ADDRESS 1
 #define AXIS_COUNT 2
 #define SERIAL_READ_FREQUENCY 200
+
+#define UART_ID uart0
+#define BAUD_RATE 115200
+#define UART_TX_PIN 0
+#define UART_RX_PIN 1
+
+// Packet structure definitions
+#define HEADER 0xAF
+#define PACKET_SIZE 11
+
+// Command Values
+#define WRITE_CMD 0x00
+#define READ_CMD 0x01
+
+// Board Status
+#define STATUS_READY 0x00
+#define STATUS_BUSY 0xFF
+
+// Device Type Values
+#define DEVICE_ORIN 0x00
+#define DEVICE_MOTOR 0x01
+#define DEVICE_ACTUATOR1 0x02
+#define DEVICE_ACTUATOR2 0x03
+#define DEVICE_LASER 0x04
+#define DEVICE_SATA2SMA 0x05
+#define DEVICE_FAN_INLET 0x07
+#define DEVICE_FAN_OUTLET 0x08
+#define DEVICE_DELAYLINE 0x09
+// Error Flag
+#define ERROR_CORRUPTION 0x00
+#define ERROR_OTHER 0x01
+// Response Acknowledgement
+#define ACK 0x06
+#define NACK 0x15
+// Timeout settings
+#define PACKET_TIMEOUT_MS 20
+
+volatile bool packet_ready = false;
+volatile uint8_t packet[PACKET_SIZE];
+volatile uint8_t packet_index = 0;
+volatile uint32_t packet_received_count = 0;
+volatile uint32_t packet_lost_count = 0;
+volatile absolute_time_t packet_start_time;
 
 float mm_per_rev[AXIS_COUNT] = {1.27, 1.27};
 
@@ -45,53 +90,72 @@ bool isAxisBeyondEnd[AXIS_COUNT];
 float axisSpeed[AXIS_COUNT];
 float homingSpeed[AXIS_COUNT];
 
-uint64_t rpm_to_delay_us(int rpm){
+// void byte_to_hex(uint8_t byte, char *hex_str);
+// uint8_t calculate_checksum(uint8_t *data, int length);
+// void process_packet(void);
+
+uint64_t rpm_to_delay_us(int rpm)
+{
     uint64_t delay = (60.00 * 1000.00 * 1000.00) / ((float)rpm * 200.00);
     return delay;
 }
 
-float rpm_to_steps_per_sec(float rpm){
+float rpm_to_steps_per_sec(float rpm)
+{
     return (rpm * STEPS_PER_REV) / 60.0;
 }
 
-float mm_per_sec_to_steps_per_sec(float mm_per_sec, float _mm_per_rev){
+float mm_per_sec_to_steps_per_sec(float mm_per_sec, float _mm_per_rev)
+{
     return (mm_per_sec * STEPS_PER_REV) / _mm_per_rev;
 }
 
-float mm_to_steps(float mm, float _mm_per_rev){
+float mm_to_steps(float mm, float _mm_per_rev)
+{
     return (mm * STEPS_PER_REV) / _mm_per_rev;
 }
 
-float steps_to_mm(float steps, float _mm_per_rev){
+float steps_to_mm(float steps, float _mm_per_rev)
+{
     return (steps * _mm_per_rev) / STEPS_PER_REV;
 }
 
 // response -> @01 0 OK IDLE -- 0
-void send_response(int axis, bool success, std::string warning = "--", std::string data = "0"){
+void send_response(int axis, bool success, std::string warning = "--", std::string data = "0")
+{
     std::string response = "@" + std::to_string(DEVICE_ADDRESS) + " " + std::to_string(axis) + " ";
-    
-    if(success){
+
+    if (success)
+    {
         response += "OK";
-    }else{
+    }
+    else
+    {
         response += "RJ";
     }
     response += " ";
 
-    if(axis == 0){
+    if (axis == 0)
+    {
         std::string state = "IDLE";
-        for(int i = 0; i < AXIS_COUNT; i++){
-            if(steppers[i]->isRunning()){
+        for (int i = 0; i < AXIS_COUNT; i++)
+        {
+            if (steppers[i]->isRunning())
+            {
                 state = "BUSY";
                 break;
             }
         }
         response += state;
     }
-    else{
-        if(steppers[axis-1]->isRunning()){
+    else
+    {
+        if (steppers[axis - 1]->isRunning())
+        {
             response += "BUSY";
         }
-        else{
+        else
+        {
             response += "IDLE";
         }
     }
@@ -114,26 +178,32 @@ void reset_pico()
 COMMAND FORMAT:
 /device_address axis_number command parameter parameter \n
 */
-void get_commands_from_serial(){
+void get_commands_from_serial()
+{
     int c = getchar_timeout_us(0);
-    if (c == PICO_ERROR_TIMEOUT) {
+    if (c == PICO_ERROR_TIMEOUT)
+    {
         return;
     }
 
     // get the text until '/' is found
-    while(c != '/'){
+    while (c != '/')
+    {
         c = getchar_timeout_us(10);
-        if (c == PICO_ERROR_TIMEOUT) {
+        if (c == PICO_ERROR_TIMEOUT)
+        {
             return;
         }
     }
 
     // get the command until '\n' or '\r' is found
     std::string command = "";
-    while(c != '\n' && c != '\r'){
+    while (c != '\n' && c != '\r')
+    {
         command += (char)c;
         c = getchar_timeout_us(10);
-        if (c == PICO_ERROR_TIMEOUT) {
+        if (c == PICO_ERROR_TIMEOUT)
+        {
             printf("Timeout waiting for footer\n");
             return;
         }
@@ -146,9 +216,10 @@ void get_commands_from_serial(){
 
     // split command into tokens
     std::vector<std::string> tokens;
-    while(command.find(' ') != std::string::npos) {
+    while (command.find(' ') != std::string::npos)
+    {
         tokens.push_back(command.substr(0, command.find(' ')));
-        command = command.substr(command.find(' ')+1);
+        command = command.substr(command.find(' ') + 1);
     }
     tokens.push_back(command);
 
@@ -159,165 +230,213 @@ void get_commands_from_serial(){
 
     // TODO: Add a mechanism to test if device address and axis number tokens are integers.
     // Else, the program will crash if the tokens are not integers.
-    
+
     int device_address = -1;
-    try{
+    try
+    {
         device_address = std::stoi(tokens[0]);
-    }catch(std::exception e){
+    }
+    catch (std::exception e)
+    {
         printf("Invalid device address\n");
         send_response(0, false, "BADDATA");
         return;
     }
-    if(device_address != DEVICE_ADDRESS){
+    if (device_address != DEVICE_ADDRESS)
+    {
         printf("Wrong device address\n");
         return;
     }
 
     int axis_number = -1;
-    try{
+    try
+    {
         axis_number = std::stoi(tokens[1]);
     }
-    catch(std::exception e){
+    catch (std::exception e)
+    {
         printf("Invalid axis number\n");
         send_response(axis_number, false, "BADDATA");
         return;
     }
-    if(axis_number < 0 || axis_number > AXIS_COUNT){
+    if (axis_number < 0 || axis_number > AXIS_COUNT)
+    {
         printf("Invalid axis number\n");
         send_response(0, false, "BADDATA");
         return;
     }
 
-    if(tokens.size() < 3){
+    if (tokens.size() < 3)
+    {
         send_response(axis_number, true);
         return;
     }
 
-    if(tokens[2] == "home"){
-        if(tokens.size() > 3){
+    if (tokens[2] == "home")
+    {
+        if (tokens.size() > 3)
+        {
             printf("Homing Speed is included\n");
             float speed = -mm_per_sec_to_steps_per_sec(std::stof(tokens[3]), mm_per_rev[0]);
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     homingSpeed[i] = speed;
                 }
             }
-            else{
-                float speed = -mm_per_sec_to_steps_per_sec(std::stof(tokens[3]), mm_per_rev[axis_number-1]);
-                homingSpeed[axis_number-1] = speed;
+            else
+            {
+                float speed = -mm_per_sec_to_steps_per_sec(std::stof(tokens[3]), mm_per_rev[axis_number - 1]);
+                homingSpeed[axis_number - 1] = speed;
             }
         }
 
-        if(axis_number == 0){
-            for(int i = 0; i < AXIS_COUNT; i++){
+        if (axis_number == 0)
+        {
+            for (int i = 0; i < AXIS_COUNT; i++)
+            {
                 steppers[i]->move(-1);
                 isAxisHomed[i] = false;
                 isAxisHoming[i] = true;
             }
         }
-        else{
-            steppers[axis_number-1]->move(-1);
-            isAxisHomed[axis_number-1] = false;
-            isAxisHoming[axis_number-1] = true;
+        else
+        {
+            steppers[axis_number - 1]->move(-1);
+            isAxisHomed[axis_number - 1] = false;
+            isAxisHoming[axis_number - 1] = true;
         }
         send_response(axis_number, true);
         return;
     }
-    else if(tokens[2] == "get"){
-        if(tokens[3] == "pos"){
-            if(axis_number == 0){
+    else if (tokens[2] == "get")
+    {
+        if (tokens[3] == "pos")
+        {
+            if (axis_number == 0)
+            {
                 std::string data = "";
-                for(int i = 0; i < AXIS_COUNT; i++){
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     data += std::to_string(steps_to_mm(steppers[i]->currentPosition(), mm_per_rev[i]));
                     data += ",";
                 }
-                data = data.substr(0, data.size()-1);
+                data = data.substr(0, data.size() - 1);
                 send_response(axis_number, true, "--", data);
             }
-            else{
-                send_response(axis_number, true, "--", std::to_string(steps_to_mm(steppers[axis_number-1]->currentPosition(), mm_per_rev[axis_number-1])));
+            else
+            {
+                send_response(axis_number, true, "--", std::to_string(steps_to_mm(steppers[axis_number - 1]->currentPosition(), mm_per_rev[axis_number - 1])));
             }
         }
-        else if(tokens[3] == "home"){
-            if(axis_number == 0){
+        else if (tokens[3] == "home")
+        {
+            if (axis_number == 0)
+            {
                 std::string data = "";
-                for(int i = 0; i < AXIS_COUNT; i++){
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     data += std::to_string(isAxisHomed[i]);
                     data += ",";
                 }
-                data = data.substr(0, data.size()-1);
+                data = data.substr(0, data.size() - 1);
                 send_response(axis_number, true, "--", data);
             }
-            else{
-                send_response(axis_number, true, "--", std::to_string(isAxisHomed[axis_number-1]));
+            else
+            {
+                send_response(axis_number, true, "--", std::to_string(isAxisHomed[axis_number - 1]));
             }
         }
-        else if(tokens[3] == "axis"){
+        else if (tokens[3] == "axis")
+        {
             send_response(axis_number, true, "--", std::to_string(AXIS_COUNT));
         }
-        else if(tokens[3] == "adc"){
-            if(tokens.size() > 4){
+        else if (tokens[3] == "adc")
+        {
+            if (tokens.size() > 4)
+            {
                 int adc_channel = std::stoi(tokens[4]);
-                if(adc_channel < 0 || adc_channel > 4){
+                if (adc_channel < 0 || adc_channel > 4)
+                {
                     send_response(axis_number, false, "BADDATA");
                 }
-                else{
+                else
+                {
                     adc_select_input(adc_channel);
                     send_response(axis_number, true, "--", std::to_string(adc_read()));
                 }
             }
-            else{
+            else
+            {
                 send_response(axis_number, false, "BADDATA");
             }
         }
-        else if(tokens[3] == "gpio"){
-            if(tokens.size() > 4){
+        else if (tokens[3] == "gpio")
+        {
+            if (tokens.size() > 4)
+            {
                 int pin = std::stoi(tokens[4]);
-                if(pin < 0 || pin > 28){
+                if (pin < 0 || pin > 28)
+                {
                     send_response(axis_number, false, "BADDATA");
                 }
-                else{
+                else
+                {
                     send_response(axis_number, true, "--", std::to_string(gpio_get(pin)));
                 }
             }
-            else{
+            else
+            {
                 send_response(axis_number, false, "BADDATA");
             }
         }
-        else if(tokens[3] == "version"){
+        else if (tokens[3] == "version")
+        {
             send_response(axis_number, true, "--", FIRMWARE_VERSION);
         }
-        else{
+        else
+        {
             send_response(axis_number, false, "BADDATA");
         }
     }
-    else if(tokens[2] == "stop"){
-        if(axis_number == 0){
-            for(int i = 0; i < AXIS_COUNT; i++){
-                if(isAxisHoming[i]){
+    else if (tokens[2] == "stop")
+    {
+        if (axis_number == 0)
+        {
+            for (int i = 0; i < AXIS_COUNT; i++)
+            {
+                if (isAxisHoming[i])
+                {
                     isAxisHoming[i] = false;
                     steppers[i]->setSpeed(0);
                     steppers[i]->moveTo(steppers[i]->currentPosition());
                 }
-                else{
+                else
+                {
                     steppers[i]->stop();
                 }
             }
         }
-        else{
-            if(isAxisHoming[axis_number-1]){
-                isAxisHoming[axis_number-1] = false;
-                steppers[axis_number-1]->setSpeed(0);
-                steppers[axis_number-1]->moveTo(steppers[axis_number-1]->currentPosition());
+        else
+        {
+            if (isAxisHoming[axis_number - 1])
+            {
+                isAxisHoming[axis_number - 1] = false;
+                steppers[axis_number - 1]->setSpeed(0);
+                steppers[axis_number - 1]->moveTo(steppers[axis_number - 1]->currentPosition());
             }
-            else{
-                steppers[axis_number-1]->stop();
+            else
+            {
+                steppers[axis_number - 1]->stop();
             }
         }
         send_response(axis_number, true);
     }
-    else if(tokens[2] == "move"){
-        if(tokens.size() < 5){
+    else if (tokens[2] == "move")
+    {
+        if (tokens.size() < 5)
+        {
             send_response(axis_number, false, "BADDATA");
             return;
         }
@@ -325,69 +444,91 @@ void get_commands_from_serial(){
         std::string move_type = tokens[3];
         float move_value = std::stof(tokens[4]);
 
-        if(tokens.size() > 5){
+        if (tokens.size() > 5)
+        {
             float speed_value = std::stof(tokens[5]);
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     axisSpeed[i] = mm_per_sec_to_steps_per_sec(speed_value, mm_per_rev[i]);
                 }
             }
-            else{
-                axisSpeed[axis_number-1] = mm_per_sec_to_steps_per_sec(speed_value, mm_per_rev[axis_number-1]);
+            else
+            {
+                axisSpeed[axis_number - 1] = mm_per_sec_to_steps_per_sec(speed_value, mm_per_rev[axis_number - 1]);
             }
-            if(tokens.size() > 6){
+            if (tokens.size() > 6)
+            {
                 float accel_value = std::stof(tokens[6]);
-                if(axis_number == 0){
-                    for(int i = 0; i < AXIS_COUNT; i++){
+                if (axis_number == 0)
+                {
+                    for (int i = 0; i < AXIS_COUNT; i++)
+                    {
                         steppers[i]->setAcceleration(mm_per_sec_to_steps_per_sec(accel_value, mm_per_rev[i]));
                     }
                 }
-                else{
-                    steppers[axis_number-1]->setAcceleration(mm_per_sec_to_steps_per_sec(accel_value, mm_per_rev[axis_number-1]));
+                else
+                {
+                    steppers[axis_number - 1]->setAcceleration(mm_per_sec_to_steps_per_sec(accel_value, mm_per_rev[axis_number - 1]));
                 }
             }
         }
 
-        if(move_type == "abs"){
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+        if (move_type == "abs")
+        {
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     steppers[i]->moveTo(mm_to_steps(move_value, mm_per_rev[i]));
                 }
             }
-            else{
-                steppers[axis_number-1]->moveTo(mm_to_steps(move_value, mm_per_rev[axis_number-1]));
+            else
+            {
+                steppers[axis_number - 1]->moveTo(mm_to_steps(move_value, mm_per_rev[axis_number - 1]));
             }
             send_response(axis_number, true);
         }
-        else if(move_type == "rel"){
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+        else if (move_type == "rel")
+        {
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     steppers[i]->move(mm_to_steps(move_value, mm_per_rev[i]));
                 }
             }
-            else{
-                steppers[axis_number-1]->move(mm_to_steps(move_value, mm_per_rev[axis_number-1]));
+            else
+            {
+                steppers[axis_number - 1]->move(mm_to_steps(move_value, mm_per_rev[axis_number - 1]));
             }
             send_response(axis_number, true);
         }
-        else{
+        else
+        {
             send_response(axis_number, false, "BADDATA");
             return;
         }
     }
-    else if(tokens[2] == "set"){
-        if(tokens.size() < 5){
+    else if (tokens[2] == "set")
+    {
+        if (tokens.size() < 5)
+        {
             send_response(axis_number, false, "BADDATA");
             return;
         }
-        
-        if(tokens[3] == "gpio"){
-            if(tokens.size() < 6){
+
+        if (tokens[3] == "gpio")
+        {
+            if (tokens.size() < 6)
+            {
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
             int pin = std::stoi(tokens[4]);
-            if(pin < 0 || pin > 28){
+            if (pin < 0 || pin > 28)
+            {
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
@@ -397,67 +538,256 @@ void get_commands_from_serial(){
             gpio_set_dir(pin, GPIO_OUT);
             gpio_put(pin, value);
         }
-        else if(tokens[3] == "pos"){
-            if(tokens.size() < 5){
+        else if (tokens[3] == "pos")
+        {
+            if (tokens.size() < 5)
+            {
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
             float pos = std::stof(tokens[4]);
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     steppers[i]->setCurrentPosition(mm_to_steps(pos, mm_per_rev[i]));
                     isAxisHomed[i] = true;
                 }
             }
-            else{
-                steppers[axis_number-1]->setCurrentPosition(mm_to_steps(pos, mm_per_rev[axis_number-1]));
-                isAxisHomed[axis_number-1] = true;
+            else
+            {
+                steppers[axis_number - 1]->setCurrentPosition(mm_to_steps(pos, mm_per_rev[axis_number - 1]));
+                isAxisHomed[axis_number - 1] = true;
             }
             send_response(axis_number, true);
         }
-        else if(tokens[3] == "dir"){
-            if(tokens.size() < 5){
+        else if (tokens[3] == "dir")
+        {
+            if (tokens.size() < 5)
+            {
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
             int dir = std::stoi(tokens[4]);
-            if(dir != 0 && dir != 1){
+            if (dir != 0 && dir != 1)
+            {
                 send_response(axis_number, false, "BADDATA");
                 return;
             }
-            if(axis_number == 0){
-                for(int i = 0; i < AXIS_COUNT; i++){
+            if (axis_number == 0)
+            {
+                for (int i = 0; i < AXIS_COUNT; i++)
+                {
                     steppers[i]->setPinsInverted(dir);
                 }
             }
-            else{
-                steppers[axis_number-1]->setPinsInverted(dir);
+            else
+            {
+                steppers[axis_number - 1]->setPinsInverted(dir);
             }
             send_response(axis_number, true);
         }
     }
-     else if (tokens[2] == "reset")
+    else if (tokens[2] == "reset")
     {
         reset_pico();
         send_response(axis_number, true);
     }
-    else{
+    else
+    {
         send_response(axis_number, false, "BADDATA");
         return;
     }
 }
 
-void serial_thread(){
-    //multicore_fifo_pop_blocking();
-    while(true){
+void serial_thread()
+{
+    // multicore_fifo_pop_blocking();
+    while (true)
+    {
         get_commands_from_serial();
         sleep_ms(10);
     }
 }
 
-int main() {
-    // Initialize Serial
+// Function to convert a byte to a hex string
+void byte_to_hex(uint8_t byte, char *hex_str)
+{
+    const char *hex_digits = "0123456789ABCDEF";
+    hex_str[0] = hex_digits[(byte >> 4) & 0x0F];
+    hex_str[1] = hex_digits[byte & 0x0F];
+    hex_str[2] = '\0';
+}
+
+// Function to calculate checksum
+uint8_t calculate_checksum(uint8_t *data, int length)
+{
+    uint8_t checksum = 0;
+    for (int i = 0; i < length; i++)
+    {
+        checksum ^= data[i];
+    }
+    return checksum;
+}
+
+// uart implementation
+void uart_isr(void)
+{
+    if (uart_is_readable(UART_ID))
+    {
+        uint8_t byte = uart_getc(UART_ID);
+        // If packet_index is 0 and we get the HEADER, start a new packet
+        if (packet_index == 0 && byte == HEADER)
+        {
+            packet[packet_index++] = byte;
+            packet_start_time = get_absolute_time();
+        }
+        else if (packet_index > 0 && packet_index < PACKET_SIZE)
+        {
+            packet[packet_index++] = byte;
+            // Check if packet is complete
+            if (packet_index == PACKET_SIZE)
+            {
+                // Verify checksum
+                uint8_t received_checksum = packet[10];
+                uint8_t calculated_checksum = calculate_checksum((uint8_t *)packet, 10); // Cast to non-volatile pointer
+                if (received_checksum == calculated_checksum)
+                {
+                    packet_ready = true;
+                }
+                else
+                {
+                    packet_lost_count++;
+                }
+                packet_index = 0; // Reset for the next packet
+            }
+        }
+        else
+        {
+            // Reset if there's an error
+            packet_index = 0;
+        }
+    }
+}
+
+
+
+void process_packet(void)
+{
+    uint8_t command = packet[1];
+    uint8_t board_status = packet[2];
+    uint8_t device_type = packet[3];
+    uint16_t voltage = (packet[4] << 8) | packet[5];
+    uint16_t current = (packet[6] << 8) | packet[7];
+    uint8_t error_flag = packet[8];
+    uint8_t response_ack = packet[9];
+    // Print packet details
+    uart_puts(UART_ID, "Received Packet:\r\n");
+    char hex_str[3]; // Buffer for hex string
+    char buffer[50]; // Buffer for text
+    // Format and send the Command
+    uart_puts(UART_ID, "Command: 0x");
+    byte_to_hex(command, hex_str);
+    uart_puts(UART_ID, hex_str);
+    uart_puts(UART_ID, "\r\n");
+
+    // Format and send the Board Status
+    uart_puts(UART_ID, "Board Status: 0x");
+    byte_to_hex(board_status, hex_str);
+    uart_puts(UART_ID, hex_str);
+    uart_puts(UART_ID, "\r\n");
+
+    // Send the Device Type
+    uart_puts(UART_ID, "Device: ");
+    switch (device_type)
+    {
+    case DEVICE_ORIN:
+        uart_puts(UART_ID, "ORIN\n");
+        break;
+    case DEVICE_MOTOR:
+        uart_puts(UART_ID, "MOTOR\n");
+        break;
+    case DEVICE_ACTUATOR1:
+        uart_puts(UART_ID, "ACTUATOR 1\n");
+        break;
+    case DEVICE_ACTUATOR2:
+        uart_puts(UART_ID, "ACTUATOR 2\n");
+        break;
+    case DEVICE_LASER:
+        uart_puts(UART_ID, "LASER\n");
+        break;
+    case DEVICE_SATA2SMA:
+        uart_puts(UART_ID, "SATA2SMA\n");
+        break;
+    case DEVICE_FAN_INLET:
+        uart_puts(UART_ID, "FAN INLET\n");
+        break;
+    case DEVICE_FAN_OUTLET:
+        uart_puts(UART_ID, "FAN OUTLET\n");
+        break;
+    case DEVICE_DELAYLINE:
+        uart_puts(UART_ID, "DELAY LINE\n");
+        break;
+    default:
+        uart_puts(UART_ID, "UNKNOWN\n");
+        break;
+    }
+    uart_puts(UART_ID, "\r");
+    // Format and send the Voltage
+    uart_puts(UART_ID, "Voltage: ");
+    sprintf(buffer, "%u", voltage);
+    uart_puts(UART_ID, buffer);
+    uart_puts(UART_ID, "\r\n");
+
+    // Format and send the Current
+    uart_puts(UART_ID, "Current: ");
+    sprintf(buffer, "%u", current);
+    uart_puts(UART_ID, buffer);
+    uart_puts(UART_ID, "\r\n");
+
+    // Format and send the Error Flag
+    uart_puts(UART_ID, "Error Flag: 0x");
+    byte_to_hex(error_flag, hex_str);
+    uart_puts(UART_ID, hex_str);
+    uart_puts(UART_ID, "\r\n");
+
+    // Format and send the Response Acknowledgement
+    uart_puts(UART_ID, "Response Acknowledgement: 0x");
+    byte_to_hex(response_ack, hex_str);
+    uart_puts(UART_ID, hex_str);
+    uart_puts(UART_ID, "\r\n");
+
+    // Send ACK or NACK response message
+    if (response_ack == ACK)
+    {
+        uart_puts(UART_ID, "ACK Received\r\n");
+    }
+    else if (response_ack == NACK)
+    {
+        uart_puts(UART_ID, "NACK Received\r\n");
+    }
+
+    packet_received_count++;
+}
+
+int main()
+{
     stdio_init_all();
+
+    // Initialize UART
+    uart_init(UART_ID, BAUD_RATE);
+
+    // Set the GPIO function for the TX and RX pins
+    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+
+    // Enable UART interrupt
+    uart_set_irq_enables(UART_ID, true, false);
+
+    // Set up UART ISR
+    irq_set_exclusive_handler(UART1_IRQ, uart_isr);
+    irq_set_enabled(UART1_IRQ, true);
+    // Initialize Serial
 
     // Initialize on-board LED
     gpio_init(LED_PIN);
@@ -473,11 +803,12 @@ int main() {
     adc_set_temp_sensor_enabled(true);
 
     multicore_launch_core1(serial_thread);
-    //multicore_fifo_pop_blocking();
+    // multicore_fifo_pop_blocking();
 
     bool lastAxisBusy[AXIS_COUNT];
 
-    for(uint8_t i = 0; i < AXIS_COUNT; i++){
+    for (uint8_t i = 0; i < AXIS_COUNT; i++)
+    {
         isAxisBusy[i] = false;
         isAxisHomed[i] = false;
         homingSpeed[i] = -mm_per_sec_to_steps_per_sec(5, mm_per_rev[i]);
@@ -501,17 +832,55 @@ int main() {
         steppers[i]->setMaxSpeed(axisSpeed[i]);
     }
 
-    while (1) {
-        for(uint8_t i = 0; i < AXIS_COUNT; i++){
+    while (1)
+    {
+        if (packet_index > 0)
+        { // If packet reception has started
+            absolute_time_t current_time = get_absolute_time();
+            int64_t elapsed_ms = absolute_time_diff_us(packet_start_time, current_time) / 1000;
 
-            if(gpio_get(home_pins[i]) == 0){
+            if (elapsed_ms > PACKET_TIMEOUT_MS)
+            {
+                // Timeout occurred
+                uart_puts(UART_ID, "Packet Timeout! Packet lost.\r\n");
+                packet_index = 0;    // Reset packet index
+                packet_lost_count++; // Increment lost packet count
+            }
+        }
+        if (packet_ready)
+        {
+            process_packet();
+            // Print packet counts
+            uart_puts(UART_ID, "Packets Received: ");
+            char count_buffer[10];
+            sprintf(count_buffer, "%u", packet_received_count);
+            uart_puts(UART_ID, count_buffer);
+            uart_puts(UART_ID, "\r\n");
+
+            uart_puts(UART_ID, "Packets Lost: ");
+            sprintf(count_buffer, "%u", packet_lost_count);
+            uart_puts(UART_ID, count_buffer);
+            uart_puts(UART_ID, "\r\n");
+            uart_puts(UART_ID, "\r\n");
+
+            // Add a small delay to allow UART ISR to process packets
+            sleep_ms(100);
+            packet_ready = false; // Reset flag
+        }
+
+        for (uint8_t i = 0; i < AXIS_COUNT; i++)
+        {
+
+            if (gpio_get(home_pins[i]) == 0)
+            {
                 isAxisBeyondHome[i] = true;
                 steppers[i]->setSpeed(-homingSpeed[i]);
                 steppers[i]->runSpeed();
                 steppers[i]->moveTo(steppers[i]->currentPosition());
                 isAxisBusy[i] = true;
             }
-            else if(isAxisBeyondHome[i]){
+            else if (isAxisBeyondHome[i])
+            {
                 isAxisBeyondHome[i] = false;
                 isAxisHoming[i] = false;
                 isAxisHomed[i] = true;
@@ -521,14 +890,16 @@ int main() {
                 isAxisBusy[i] = false;
             }
 
-            if(gpio_get(end_pins[i]) == 0){
+            if (gpio_get(end_pins[i]) == 0)
+            {
                 isAxisBeyondEnd[i] = true;
                 steppers[i]->setSpeed(homingSpeed[i]);
                 steppers[i]->runSpeed();
                 steppers[i]->moveTo(steppers[i]->currentPosition());
                 isAxisBusy[i] = true;
             }
-            else if(isAxisBeyondEnd[i]){
+            else if (isAxisBeyondEnd[i])
+            {
                 isAxisBeyondEnd[i] = false;
                 steppers[i]->setSpeed(0);
                 steppers[i]->moveTo(steppers[i]->currentPosition());
@@ -541,46 +912,60 @@ int main() {
             // }
 
             // run the steppers
-            if(isAxisHoming[i]){
-                if(gpio_get(home_pins[i]) == 1){
-                    if(steppers[i]->speed() != homingSpeed[i]){
+            if (isAxisHoming[i])
+            {
+                if (gpio_get(home_pins[i]) == 1)
+                {
+                    if (steppers[i]->speed() != homingSpeed[i])
+                    {
                         steppers[i]->setSpeed(homingSpeed[i]);
                     }
-                    if(steppers[i]->maxSpeed() != homingSpeed[i]){
+                    if (steppers[i]->maxSpeed() != homingSpeed[i])
+                    {
                         steppers[i]->setMaxSpeed(homingSpeed[i]);
                     }
-                    if(steppers[i]->runSpeed()){
+                    if (steppers[i]->runSpeed())
+                    {
                         isAxisBusy[i] = true;
                         gpio_put(LED_PIN, 1);
                     }
                 }
             }
-            else if(!isAxisBeyondHome[i] && !isAxisBeyondEnd[i]){
-                if(steppers[i]->maxSpeed() != axisSpeed[i]){
+            else if (!isAxisBeyondHome[i] && !isAxisBeyondEnd[i])
+            {
+                if (steppers[i]->maxSpeed() != axisSpeed[i])
+                {
                     steppers[i]->setMaxSpeed(axisSpeed[i]);
                 }
-                if(steppers[i]->run()){
+                if (steppers[i]->run())
+                {
                     isAxisBusy[i] = true;
                     gpio_put(LED_PIN, 1);
                 }
-                else{
+                else
+                {
                     isAxisBusy[i] = false;
                     gpio_put(LED_PIN, 0);
                 }
             }
 
             // send status if axis busy state changed to false
-            for(uint8_t i = 0; i < AXIS_COUNT; i++){
-                if(lastAxisBusy[i] && !isAxisBusy[i]){
-                    send_response(i+1, true);
+            for (uint8_t i = 0; i < AXIS_COUNT; i++)
+            {
+                if (lastAxisBusy[i] && !isAxisBusy[i])
+                {
+                    send_response(i + 1, true);
                     bool allAxisIdle = true;
-                    for(uint8_t i = 0; i < AXIS_COUNT; i++){
-                        if(isAxisBusy[i]){
+                    for (uint8_t i = 0; i < AXIS_COUNT; i++)
+                    {
+                        if (isAxisBusy[i])
+                        {
                             allAxisIdle = false;
                             break;
                         }
                     }
-                    if(allAxisIdle){
+                    if (allAxisIdle)
+                    {
                         send_response(0, true);
                     }
                 }
@@ -591,7 +976,7 @@ int main() {
 }
 
 /**
- 
+
 /1 1 set gpio 12 1
 
 /1 0 move rel 10
