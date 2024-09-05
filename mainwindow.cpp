@@ -251,7 +251,7 @@ void MainWindow::on_fileinput_clicked()
                 if (QFile::copy(sourcefilename, destinationFilePath)) {
                     qDebug() << "File copied successfully to" << destinationDirectory;
                     QThread::sleep(1) ;
-                    MainWindow::on_pushButton_Connect_clicked();
+                    // MainWindow::on_pushButton_Connect_clicked();
                     return;
                 } else {
                     qDebug() << "Error copying file to" << destinationDirectory;
@@ -280,6 +280,8 @@ void MainWindow::on_reset_clicked()
             MainWindow::on_pushButton_Disconnect_clicked();
             QThread::msleep(200) ;
             on_fileinput_clicked();
+            QThread::msleep(1500) ;
+            MainWindow::on_pushButton_Connect_clicked();
         }
 
     }
