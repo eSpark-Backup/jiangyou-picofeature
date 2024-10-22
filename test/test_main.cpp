@@ -15,6 +15,8 @@
 #include <QTimer>
 #include <QMutex>
 #include <QWaitCondition>
+#include <fstream>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -473,6 +475,109 @@ int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     // ::testing::GTEST_FLAG(break_on_failure) = true;
     return RUN_ALL_TESTS();
+}
+
+// Function to create and write to a CSV file
+void WriteCSV(const std::string& filename, const std::string& testName, const std::string& actualResult, const std::string& testResult) {
+    std::ofstream file(filename, std::ios::app);  // Append mode to add new test results
+    if (file.is_open()) {
+        // Write the headers if the file is empty (i.e., newly created)
+        file.seekp(0, std::ios::end);  // Go to the end of the file
+        if (file.tellp() == 0) {       // Check if the file is empty
+            file << "TestName,ActualResult,TestResult\n";
+        }
+
+        // Write test result to the CSV file
+        file << testName << "," << actualResult << "," << testResult << "\n";
+        file.close();
+    } else {
+        throw std::runtime_error("Unable to open file");
+    }
+}
+
+
+TEST(ActuatorTest, RunAllTestWriteCSV)
+{
+    std::string currentDir = std::filesystem::current_path().string();
+
+    std::string parentDir = std::filesystem::path(currentDir).parent_path().parent_path().string();
+    std::cout << "Parent Directory: " << parentDir << std::endl;
+
+    std::string filename = parentDir + "/test/test_results.csv";
+    std::cout << "CSV Filename: " << filename << std::endl;
+
+    Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
+
+    // actuator.connect();
+    bool connectResult = actuator.connect();  
+    if (connectResult) {
+        WriteCSV(filename, "ConnectTest", "1", "Pass");
+    } else {
+        WriteCSV(filename, "ConnectTest", "0", "Fail");
+    }
+    EXPECT_TRUE(connectResult); 
+
+    // actuator.disconnect();
+    bool disconnectResult = actuator.disconnect();  
+    if (disconnectResult) {
+        WriteCSV(filename, "disconnectTest", "1", "Pass");
+    } else {
+        WriteCSV(filename, "disconnectTest", "0", "Fail");
+    }
+    EXPECT_TRUE(disconnectResult);  
+
+    // set direction test
+    actuator.connect();
+
+    bool setDirection = actuator.setDirection(1, 0);
+    EXPECT_EQ(actuator.setDirection(1, 0), 1);
+    if(setDirection){
+        WriteCSV(filename, "SetDirectionTest", "1", "Pass");
+    } else {
+        WriteCSV(filename, "SetDirectionTest", "0", "Fail");
+    }
+    EXPECT_TRUE(setDirection);
+
+    /*check home test*/
+    bool homeTest = actuator.home(1, 0, false, -1);
+    EXPECT_EQ(actuator.home(1, 0, false, -1), 1);
+    if(homeTest){
+        WriteCSV(filename, "homeTest", "1", "Pass");
+    } else {
+        WriteCSV(filename, "homeTest", "0", "Fail");
+    }
+    actuator.stop(1, true);
+    EXPECT_TRUE(homeTest);
+
+    /*CHECK ishome test*/
+    bool isHomeTest =actuator.isHomed(0);
+    EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
+    if (isHomeTest){
+        WriteCSV(filename, "ishome Test", "1", "Pass");
+    } else {
+        WriteCSV(filename, "ishome Test", "0", "Fail");
+    }
+    EXPECT_TRUE(isHomeTest);
+
+    /*check Stop test */
+
+    actuator.moveRelative(100, 1, 100, 1000, false);
+    usleep(500000);
+    EXPECT_EQ(actuator.isBusy(1), 1);
+    bool stopTest =actuator.stop(1, true);
+    EXPECT_EQ(actuator.stop(1, true), 1);
+    usleep(500000);
+    EXPECT_EQ(actuator.isBusy(1), 0);
+    if(stopTest){
+        WriteCSV(filename, "Stop Test", "1", "Pass");
+    } else
+    {
+        WriteCSV(filename, "Stop Test", "0", "Fail");
+    }
+    EXPECT_TRUE(stopTest);
+
+
+    actuator.disconnect();
 }
 
 
