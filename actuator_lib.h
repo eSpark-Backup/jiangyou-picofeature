@@ -97,6 +97,7 @@ public:
     double getPicoTemperature();
 
     void resetPi();
+    bool resetPiSuccess() const;
 
     std::string getImagingProbe();
 
@@ -111,6 +112,7 @@ private:
     bool waitUntilIdleFun(int axis, int timeout = -1);//milliseconds
 
     bool _debugEnabled = true;
+    bool resetPiSuccessFlag;
 
     int _id;
     std::string _port;

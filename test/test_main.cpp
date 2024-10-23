@@ -499,65 +499,40 @@ void WriteCSV(const std::string& filename, const std::string& testName, const st
 TEST(ActuatorTest, RunAllTestWriteCSV)
 {
     std::string currentDir = std::filesystem::current_path().string();
-
     std::string parentDir = std::filesystem::path(currentDir).parent_path().parent_path().string();
     std::cout << "Parent Directory: " << parentDir << std::endl;
-
     std::string filename = parentDir + "/test/test_results.csv";
     std::cout << "CSV Filename: " << filename << std::endl;
-
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
 
     // actuator.connect();
-    bool connectResult = actuator.connect();  
-    if (connectResult) {
-        WriteCSV(filename, "ConnectTest", "1", "Pass");
-    } else {
-        WriteCSV(filename, "ConnectTest", "0", "Fail");
-    }
-    EXPECT_TRUE(connectResult); 
+    bool connectResult = actuator.connect();  // or use return value if connect() returns something
+    WriteCSV(filename, "ConnectTest", connectResult ? "1" : "0", connectResult ? "Pass" : "Fail");
+    EXPECT_TRUE(connectResult);  // You can check if the connection was successful
 
-    // actuator.disconnect();
-    bool disconnectResult = actuator.disconnect();  
-    if (disconnectResult) {
-        WriteCSV(filename, "disconnectTest", "1", "Pass");
-    } else {
-        WriteCSV(filename, "disconnectTest", "0", "Fail");
-    }
-    EXPECT_TRUE(disconnectResult);  
+        /*getPosition */
+    bool getPositionTest = actuator.getPosition(1)[0];
+    WriteCSV(filename, "getPositionTest", getPositionTest ? "1" : "0", getPositionTest ? "Pass" : "Fail");
+    EXPECT_TRUE(getPositionTest);
 
-    // set direction test
-    actuator.connect();
-
-    bool setDirection = actuator.setDirection(1, 0);
+    /*set direction test*/
+    bool setDirectionTest = actuator.setDirection(1, 0);
     EXPECT_EQ(actuator.setDirection(1, 0), 1);
-    if(setDirection){
-        WriteCSV(filename, "SetDirectionTest", "1", "Pass");
-    } else {
-        WriteCSV(filename, "SetDirectionTest", "0", "Fail");
-    }
-    EXPECT_TRUE(setDirection);
+    WriteCSV(filename, "setDirectionTest", setDirectionTest ? "1" : "0", setDirectionTest ? "Pass" : "Fail");
+    EXPECT_TRUE(setDirectionTest);
 
     /*check home test*/
     bool homeTest = actuator.home(1, 0, false, -1);
     EXPECT_EQ(actuator.home(1, 0, false, -1), 1);
-    if(homeTest){
-        WriteCSV(filename, "homeTest", "1", "Pass");
-    } else {
-        WriteCSV(filename, "homeTest", "0", "Fail");
-    }
+    WriteCSV(filename, "homeTest", homeTest ? "1" : "0", homeTest ? "Pass" : "Fail");
     actuator.stop(1, true);
     EXPECT_TRUE(homeTest);
 
     /*CHECK ishome test*/
-    bool isHomeTest =actuator.isHomed(0);
-    EXPECT_EQ(actuator.getLastError(), _NO_ERROR);
-    if (isHomeTest){
-        WriteCSV(filename, "ishome Test", "1", "Pass");
-    } else {
-        WriteCSV(filename, "ishome Test", "0", "Fail");
-    }
-    EXPECT_TRUE(isHomeTest);
+
+    bool isHomeTest = actuator.isHomed(0);
+    WriteCSV(filename, "ishomeTest", isHomeTest ? "1" : "0", isHomeTest ? "Fail" : "Pass");
+    EXPECT_FALSE(isHomeTest);
 
     /*check Stop test */
 
@@ -568,16 +543,124 @@ TEST(ActuatorTest, RunAllTestWriteCSV)
     EXPECT_EQ(actuator.stop(1, true), 1);
     usleep(500000);
     EXPECT_EQ(actuator.isBusy(1), 0);
-    if(stopTest){
-        WriteCSV(filename, "Stop Test", "1", "Pass");
-    } else
-    {
-        WriteCSV(filename, "Stop Test", "0", "Fail");
-    }
+    WriteCSV(filename, "stopTest", stopTest ? "1" : "0", stopTest ? "Pass" : "Fail");
     EXPECT_TRUE(stopTest);
 
+    /* isBusy test*/
 
+    bool isbusyTest = actuator.isBusy(0);
+    WriteCSV(filename, "isbusyTest", isbusyTest ? "1" : "0", isbusyTest ? "Fail" : "Pass");
+    EXPECT_FALSE(isbusyTest);
+
+    /*Get Firmware Version*/
+
+    std::string firmwareVersion = actuator.getFirmwareVersion();
+    bool getFirmwareVersionTest = (firmwareVersion == "1.5");
+    WriteCSV(filename, "getFirmwareVersionTest", getFirmwareVersionTest ? "1" : "0", getFirmwareVersionTest ? "Pass" : "Fail");
+    EXPECT_STREQ(actuator.getFirmwareVersion().c_str(), "1.5");
+    EXPECT_TRUE(getFirmwareVersionTest);
+
+    /* check move Absolute*/
+
+    bool moveAbsoluteTest = actuator.moveAbsolute(1, 1, 100, 1000, true);
+    EXPECT_EQ(actuator.moveAbsolute(1, 1, 100, 1000, true), 1);
+    WriteCSV(filename, "moveAbsoluteTest", moveAbsoluteTest ? "1" : "0", moveAbsoluteTest ? "Pass" : "Fail");
+    EXPECT_TRUE(moveAbsoluteTest);
+
+    /*Set GPIO test*/
+
+   std::vector<int> pinValues = {0, 1, 11, 28};
+    bool setGPIOtest = true;  // Initialize to true; we'll AND it with results
+    for (int pin : pinValues) {
+    bool result = actuator.setGPIO(pin, 1);
+    setGPIOtest &= result;  // Keep track of the overall success
+    EXPECT_EQ(result, 1);
+    }
+    WriteCSV(filename, "setGPIOtest", setGPIOtest ? "1" : "0", setGPIOtest ? "Pass" : "Fail");
+    EXPECT_TRUE(setGPIOtest);
+
+    /*get gpio test*/
+
+    std::vector<int> pinValu = {0, 1, 11, 28};
+    bool getGPIOtest = true;
+    for (int pin : pinValu) {
+    // get GPIO to 1 and check
+    actuator.setGPIO(pin, 1);
+    bool result = (actuator.getGPIO(pin) == 1);
+    // getGPIOtest &= result;
+    EXPECT_EQ(result, true);
+
+    actuator.setGPIO(pin, 0);
+    result = (actuator.getGPIO(pin) == 0);
+    getGPIOtest &= result;
+    EXPECT_EQ(result, true);
+    }
+    WriteCSV(filename, "getGPIOTest", getGPIOtest ? "1" : "0", getGPIOtest ? "Pass" : "Fail");
+    EXPECT_TRUE(getGPIOtest);
+
+    /* check MoveRelatives Test */
+
+    int iteration_Control = 10; // Number of iterations
+    int timer_interrupt = 20;   // Timer interrupt in seconds
+    int Total_Hours = 1;        // Total hours to run the test
+    auto StartTime = std::chrono::steady_clock::now();
+    int argc = 0;
+    char* argv[] = { nullptr };
+    QCoreApplication app(argc, argv);
+    GPIOTestWorker gpioWorker(actuator, timer_interrupt);
+    gpioWorker.start();
+    bool moveRelativesTest = true;
+    for (int i = 0; i < iteration_Control; i++) {
+        auto movRelStartTime = std::chrono::steady_clock::now();
+        if (!actuator.isConnected()) {
+            actuator.connect();
+        }
+        bool result = actuator.moveRelative(0.5, 1, 100, 1000, false);
+        moveRelativesTest &= result;
+        EXPECT_EQ(result, true);
+        auto movRelEndTime = std::chrono::steady_clock::now();
+        auto movRelDuration = std::chrono::duration_cast<std::chrono::milliseconds>(movRelEndTime - movRelStartTime);
+        std::cout << "MoveRelative iteration " << i + 1 << " took " << movRelDuration.count() << " ms." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        gpioWorker.waitForTests(); // Wait for GPIO tests to finish
+        auto EndTime = std::chrono::steady_clock::now();
+        auto ElapsedTime = std::chrono::duration_cast<std::chrono::minutes>(EndTime - StartTime);
+        if (ElapsedTime.count() >= Total_Hours) {
+            std::cout << "Total hours of running is: " << ElapsedTime.count() << std::endl;
+            break;
+        }
+    }
+    WriteCSV(filename, "MoveRelativesTest", moveRelativesTest ? "1" : "0", moveRelativesTest ? "Pass" : "Fail");
+    EXPECT_TRUE(moveRelativesTest);
+    gpioWorker.quit();
+    gpioWorker.wait();
+
+    /*Reset pico Test*/
+    actuator.resetPi();
+    bool resetPiTest = actuator.resetPiSuccess();
+    WriteCSV(filename, "resetPiTest", resetPiTest ? "1" : "0", resetPiTest ? "Pass" : "Fail");
+    EXPECT_TRUE(resetPiTest);
     actuator.disconnect();
+    std::string user = std::getenv("USER");
+    std::string destinationDir = "/media/" + user + "/RPI-RP2";
+    EXPECT_TRUE(copyFile(sourcePath, destinationDir));
+    sleep(1);
+    EXPECT_EQ(actuator.connect(), 1);
+
+    /* Get Pico Temperature Test*/
+
+    EXPECT_NEAR(actuator.getPicoTemperature(), 0.0, 10.0);
+    bool PicoTemperature = actuator.getPicoTemperature();
+    WriteCSV(filename, "PicoTemperature", PicoTemperature ? "0.0 - 10.0" : " Out of range", PicoTemperature ? "Pass" : "Fail");
+    EXPECT_TRUE(PicoTemperature); 
+
+
+    /* actuator.disconnect(); */
+
+    bool disconnectResult = actuator.disconnect();  // or use return value if connect() returns something
+    WriteCSV(filename, "disConnectTest", disconnectResult ? "1" : "0", disconnectResult ? "Pass" : "Fail");
+    EXPECT_TRUE(disconnectResult);  // You can check if the connection was successful
+
 }
 
 

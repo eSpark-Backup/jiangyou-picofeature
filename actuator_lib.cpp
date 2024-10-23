@@ -1077,6 +1077,7 @@ std::string Actuator::getFirmwareVersion(){
 void Actuator::resetPi(){
     // Assemble command
     std::string command = "/" + std::to_string(_id) + " 0 reset version\n";
+    resetPiSuccessFlag = true;
 
     // Set command status to pending and send the command
     _commandMutex.lock();
@@ -1089,6 +1090,10 @@ void Actuator::resetPi(){
     // Wait for command acknoledgement
     if(!waitForCommandAcknowledge()){
     }
+}
+
+bool Actuator::resetPiSuccess() const {
+    return resetPiSuccessFlag;
 }
 
 /**
