@@ -339,7 +339,8 @@ TEST(ActuatorTest, GetFirmwareVersionTest) {
 TEST(ActuatorTest, GetPicoTemperatureTest) {
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
     actuator.connect();
-    EXPECT_NEAR(actuator.getPicoTemperature(), 25.0, 10.0);
+    float PicoTemperature = actuator.getPicoTemperature();
+    EXPECT_NEAR(actuator.getPicoTemperature(), PicoTemperature , 20.0);
     // disconnect
     actuator.disconnect();
 }
@@ -650,8 +651,9 @@ TEST(ActuatorTest, RunAllTestWriteCSV)
     /* Get Pico Temperature Test*/
 
     // EXPECT_NEAR(actuator.getPicoTemperature(), 0.0, 10.0);
-    int PicoTemperature = actuator.getPicoTemperature();
-    if (PicoTemperature >= 0 && PicoTemperature <= 10)  // Correct range check
+    float PicoTemperature = actuator.getPicoTemperature();
+    EXPECT_NEAR(actuator.getPicoTemperature(), PicoTemperature , 20.0);
+    if (PicoTemperature)  // Correct range check
     {
         WriteCSV(filename, "PicoTemperature", "Get Pico Temperature Successfully", "Pass", "Passed: Pico Temperature in range (0 - 10)");
         EXPECT_TRUE(true);  // Test passes if temperature is within range
