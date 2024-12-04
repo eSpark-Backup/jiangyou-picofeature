@@ -1,0 +1,16 @@
+TestName,ActualResult,TestResult,Remarks
+ConnectTest,Connection Successful,Pass:,Connection Passed
+getPositionTest,Position Acquired Successfully,Pass,Get Position Passed
+setDirectionTest,Direction Set Successfully,Pass,Set Direction Passed
+homeTest,Successfully reached home position,Pass,home Test Passed
+ishomeTest,The device is not on home position validation,Pass,is home Test Passed
+stopTest,Successfully Stopped,Pass,Stop Test Passed
+isbusyTest,Device is Busy Validation,Pass,is busy Test Passed
+getFirmwareVersionTest,get Firmware Version Successful,Pass,get Firmware Version Passed
+moveAbsoluteTest,move Absolute Test Successful,Pass,move Absolute Test Passed
+setGPIOtest,setGPIO Successful,Pass,setGPIO Test Passed
+getGPIOTest,get GPIO Successful,Pass, getGPIO Test Passed
+MoveRelativesTest,Move Relatives Successfully,Pass,Move Relatives Test Passed
+PicoTemperature,Get Pico Temperature Successfully,Pass,Passed: Pico Temperature in range
+DisConnectTest,Disconnected Successfully,Pass,Disconnected Test Passed
+resetPiTest,Reset Pi Successfully,Pass,Reset Pi Test Passed

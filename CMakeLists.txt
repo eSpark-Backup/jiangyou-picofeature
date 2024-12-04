@@ -29,7 +29,6 @@
 #     GTest::gtest_main
 # )
 
-# include(GoogleTest)
 
 
 cmake_minimum_required(VERSION 3.13)
@@ -60,6 +59,8 @@ add_executable(actuator_lib
         test/test_main.cpp
         actuator_lib.cpp
         test/GetGPIOTest.h
+        test/test_runner_csv.cpp
+        test/actuator_test.h
 )
 
 # Recursively add all files in the "serial" directory
