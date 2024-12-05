@@ -16,18 +16,18 @@ bool CopyFile(const std::string& sourcePath, const std::string& destinationPath)
     std::string command = "cp " + sourcePath + "/main.uf2" + " " + destinationPath;
     // Execute the command
     int result = system(command.c_str());
-
     if (result == 0) {
         return true;
+        std::cout << "File transfer successfully ";
     } else {
         return false;
+        std::cout << "File transfer Fail";
     }
-
 }
 
-std::string currentPath = fs::current_path().string();
-std::string parentPath = std::filesystem::path(currentPath).parent_path().string();
-std::string SourcePath = parentPath + "/uf2File";
+std::string currentPh = fs::current_path().string();
+std::string parentPh = std::filesystem::path(currentPh);
+std::string SourcePath = parentPh + "/uf2File";
 
 // Function to create and write to a CSV file
 void WriteCSV(const std::string& filename, const std::string& testName, const std::string& actualResult, const std::string& testResult, const std::string& remarks) {
@@ -38,7 +38,6 @@ void WriteCSV(const std::string& filename, const std::string& testName, const st
         if (file.tellp() == 0) {       // Check if the file is empty
             file << "TestName,ActualResult,TestResult,Remarks\n";
         }
-
         // Write test result to the CSV file
         file << testName << "," << actualResult << "," << testResult <<  "," << remarks <<"\n";
         file.close();
@@ -50,16 +49,16 @@ void WriteCSV(const std::string& filename, const std::string& testName, const st
 TEST(ActuatorTest, RunAllTestWriteCSV)
 {
     std::string currentDir = std::filesystem::current_path().string();
-    std::string parentDir = std::filesystem::path(currentDir).parent_path().string();
-    std::cout << "Parent Directory: " << parentDir << std::endl;
-    std::string filename = parentDir + "/test/test_results.csv";
+    // std::string parentDir = std::filesystem::path(currentDir);
+    std::cout << "Parent Directory: " << currentDir << std::endl;
+    std::string filename = currentDir + "/test/test_results.csv";
     std::cout << "CSV Filename: " << filename << std::endl;
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
 
     // actuator.connect();
-    bool connectResult = actuator.connect();  // or use return value if connect() returns something
+    bool connectResult = actuator.connect();
     WriteCSV(filename, "ConnectTest", connectResult ? "Connection Successful" : "Connection Unsuccessful", connectResult ? "Pass:" : "Fail", connectResult ? "Connection Passed":"Connection Failed");
-    EXPECT_TRUE(connectResult);  // You can check if the connection was successful
+    EXPECT_TRUE(connectResult);
 
         /*getPosition */
     bool getPositionTest = actuator.getPosition(1)[0];
@@ -212,11 +211,12 @@ TEST(ActuatorTest, RunAllTestWriteCSV)
     actuator.resetPi();
     EXPECT_EQ(actuator.connect(), 0);
     actuator.disconnect();
+    QThread::msleep(200);
     bool resetPiTest = actuator.resetPiSuccess();
     WriteCSV(filename, "resetPiTest", resetPiTest ? "Reset Pi Successfully" : "Reset Pi Unsuccessfully", resetPiTest ? "Pass" : "Fail", resetPiTest ? "Reset Pi Test Passed" : "Reset Pi Test Failed");
-    sleep(1);
     std::string user = std::getenv("USER");
     std::string destinationDir = "/media/" + user + "/RPI-RP2";
     CopyFile(SourcePath, destinationDir);
-    sleep(1);
+    QThread::msleep(1500);
+
 }
