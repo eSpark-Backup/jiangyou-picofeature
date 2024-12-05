@@ -5,10 +5,10 @@
 #include <string>
 #include <chrono>
 #include <iostream>
-#include <qt5/QtCore/qobject.h>
+#include "qobject.h"
 #include <thread>
 // #include <test_main.moc>
-#include <qt5/QtCore/QCoreApplication>
+#include <QCoreApplication>
 #include <filesystem>
 #include "GetGPIOTest.h"
 #include <QThread>
@@ -31,13 +31,18 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath)
 
     if (result == 0) {
         return true;
+        std::cout << "File transfer successfully ";
     } else {
         return false;
+        std::cout << "File transfer Fail ";
     }
-
 }
 
-std::string sourcePath = fs::current_path();
+
+
+std::string currentPath = fs::current_path().string();
+std::string parentPath = std::filesystem::path(currentPath).parent_path().string();
+std::string sourcePath = parentPath + "/uf2File";
 
 
 // Manual Connect test
@@ -332,11 +337,11 @@ TEST_P(ActuatorTestResetPi, ResetPiTest) {
     actuator.resetPi();
     EXPECT_EQ(actuator.connect(), 0);
     actuator.disconnect();
-
+    QThread::msleep(200);
     std::string user = std::getenv("USER");
     std::string destinationDir = "/media/" + user + "/RPI-RP2";
     EXPECT_TRUE(copyFile(sourcePath, destinationDir));
-    sleep(1);
+    QThread::msleep(1500);
     EXPECT_EQ(actuator.connect(), 1);
     actuator.disconnect();
 }
