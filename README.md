@@ -29,3 +29,35 @@ Step#9 -     `make -j4`
 ### Build Complete:
 ![image](https://github.com/user-attachments/assets/40f5bf93-8ced-43af-9213-fbb75d19312b)
 
+
+# Give Permission To Pico Device
+
+When serial port open it required permission, so following steps give permanent permission.
+
+### Step# 1: Identify the Device- Plug in your device and run:
+
+`ls -l /dev/ttyACM0`
+
+### Step# 2: Check Device Attributes- Get attributes like idVendor and idProduct by running:
+
+`udevadm info -a -n /dev/ttyACM0`
+
+Look for the first block with idVendor and idProduct attributes.
+
+### Step# 3: Create a udev Rule- Create a new udev rule file:
+
+`sudo nano /etc/udev/rules.d/99-usb-serial.rules`
+
+Add the following line (replace with your device's idVendor and idProduct values):
+`ATTRS{idVendor}=="1234", ATTRS{idProduct}=="5678", MODE="0666"`
+
+### Step# 4: Reload udev Rules- Reload udev rules and reconnect the device:
+
+`sudo udevadm control --reload-rules` 
+
+`sudo udevadm trigger`
+
+### Step# 5: Verify- Check the permissions:
+
+`ls -l /dev/ttyACM0`
+
