@@ -1,0 +1,15 @@
+sudo apt update
+sudo apt install cmake
+sudo apt install build-essential
+sudo apt install qt5-qmake qtbase5-dev qtchooser qtbase5-dev-tools libqt5webkit5-dev libqt5svg5-dev
+sudo apt-get install libgtest-dev
+sudo apt-get install cmake
+cd /usr/src/gtest
+sudo cmake .
+sudo make
+sudo cp libgtest*.a /usr/lib
+sudo apt install libboost-all-dev libssl-dev libprotobuf-dev protobuf-compiler
+sudo apt install git
+sudo apt install g++ gcc
+
+

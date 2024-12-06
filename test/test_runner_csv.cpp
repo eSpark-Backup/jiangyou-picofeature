@@ -12,21 +12,21 @@
 
 namespace fs = std::filesystem;
 
-bool CopyFile(const std::string& sourcePath, const std::string& destinationPath) {
+void CopyFile(const std::string& sourcePath, const std::string& destinationPath) {
     std::string command = "cp " + sourcePath + "/main.uf2" + " " + destinationPath;
     // Execute the command
     int result = system(command.c_str());
     if (result == 0) {
-        return true;
+        // return true;
         std::cout << "File transfer successfully ";
     } else {
-        return false;
+        // return false;
         std::cout << "File transfer Fail";
     }
 }
 
 std::string currentPh = fs::current_path().string();
-std::string parentPh = std::filesystem::path(currentPh);
+std::string parentPh = std::filesystem::path(currentPh).parent_path();
 std::string SourcePath = parentPh + "/uf2File";
 
 // Function to create and write to a CSV file
@@ -49,10 +49,11 @@ void WriteCSV(const std::string& filename, const std::string& testName, const st
 TEST(ActuatorTest, RunAllTestWriteCSV)
 {
     std::string currentDir = std::filesystem::current_path().string();
-    // std::string parentDir = std::filesystem::path(currentDir);
-    std::cout << "Parent Directory: " << currentDir << std::endl;
-    std::string filename = currentDir + "/test/test_results.csv";
+    std::string parentDir = std::filesystem::path(currentDir).parent_path();
+    std::cout << "Parent Directory: " << parentDir << std::endl;
+    std::string filename = parentDir + "/test/test_results.csv";
     std::cout << "CSV Filename: " << filename << std::endl;
+
     Actuator actuator(VALID_DEVICE_ID, VALID_SERIAL_PORT);
 
     // actuator.connect();
@@ -207,16 +208,22 @@ TEST(ActuatorTest, RunAllTestWriteCSV)
     EXPECT_TRUE(disconnectResult);  // You can check if the connection was successful
 
     /*Reset pico Test*/
-    EXPECT_EQ(actuator.connect(), 1);
-    actuator.resetPi();
-    EXPECT_EQ(actuator.connect(), 0);
-    actuator.disconnect();
-    QThread::msleep(200);
-    bool resetPiTest = actuator.resetPiSuccess();
-    WriteCSV(filename, "resetPiTest", resetPiTest ? "Reset Pi Successfully" : "Reset Pi Unsuccessfully", resetPiTest ? "Pass" : "Fail", resetPiTest ? "Reset Pi Test Passed" : "Reset Pi Test Failed");
-    std::string user = std::getenv("USER");
-    std::string destinationDir = "/media/" + user + "/RPI-RP2";
-    CopyFile(SourcePath, destinationDir);
-    QThread::msleep(1500);
+    bool resetPiTest;
+    for (int i = 0; i < 5; ++i) {
+        std::cout << "Iteration " << (i + 1) << ":\n";
+        EXPECT_EQ(actuator.connect(), 1);
+        // actuator.connect();
+        QThread::msleep(200);
+        actuator.resetPi();
+        QThread::msleep(200);
+        EXPECT_EQ(actuator.connect(), 0);
+        actuator.disconnect();
+        resetPiTest = actuator.resetPiSuccess();
 
+        std::string user = std::getenv("USER");
+        std::string destinationDir = "/media/" + user + "/RPI-RP2";
+        CopyFile(SourcePath, destinationDir);
+        QThread::msleep(1500);
+    }
+    WriteCSV(filename, "resetPiTest", resetPiTest ? "Reset Pi Successfully" : "Reset Pi Unsuccessfully", resetPiTest ? "Pass" : "Fail", resetPiTest ? "Reset Pi Test Passed" : "Reset Pi Test Failed");
 }
